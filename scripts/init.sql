@@ -3,7 +3,7 @@
 -- Users table
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
-    uuid UUID DEFAULT gen_random_uuid() UNIQUE NOT NULL,
+    uid VARCHAR(64) UNIQUE NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -12,27 +12,27 @@ CREATE TABLE IF NOT EXISTS users (
 -- User RDB resources
 CREATE TABLE IF NOT EXISTS user_rdbs (
     id SERIAL PRIMARY KEY,
-    uuid UUID DEFAULT gen_random_uuid() UNIQUE NOT NULL,
-    user_id SERIAL NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    uid VARCHAR(64) UNIQUE NOT NULL,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     rdb_type VARCHAR(50) NOT NULL,
     url TEXT NOT NULL,
     enabled BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, uuid)
+    UNIQUE(user_id, uid)
 );
 
 -- User KV resources
 CREATE TABLE IF NOT EXISTS user_kvs (
     id SERIAL PRIMARY KEY,
-    user_id SERIAL NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    uuid UUID DEFAULT gen_random_uuid() UNIQUE NOT NULL,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    uid VARCHAR(64) UNIQUE NOT NULL,
     name VARCHAR(255) NOT NULL,
     kv_type VARCHAR(50) NOT NULL,
     url TEXT NOT NULL,
     enabled BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, uuid)
+    UNIQUE(user_id, uid)
 );
 
 -- Verification codes table

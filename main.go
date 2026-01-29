@@ -22,17 +22,8 @@ func main() {
 	}
 	JWTSecret = []byte(jwtSecret)
 
-	// Get database DSN
-	dsn := *dbDSN
-	if dsn == "" {
-		dsn = os.Getenv("DATABASE_URL")
-	}
-	if dsn == "" {
-		dsn = "host=localhost port=5432 user=postgres password=postgres dbname=combfather sslmode=disable"
-	}
-
 	// Initialize database
-	if err := InitDB(dsn); err != nil {
+	if err := InitDB(*dbDSN); err != nil {
 		log.Fatal("Failed to connect to database:", err)
 	}
 	defer DB.Close()
