@@ -1,4 +1,4 @@
-shname: Build and Push
+name: Build and Push
 
 on:
   push:
