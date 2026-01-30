@@ -41,6 +41,9 @@ func main() {
 	// Setup Gin router
 	r := gin.Default()
 
+	// Health check endpoint
+	r.GET("/health", Health)
+
 	// Serve index.html at root
 	r.StaticFile("/", "./index.html")
 
