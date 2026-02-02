@@ -1,4 +1,4 @@
-package main
+package handlers
 
 import (
 	"log"
@@ -373,34 +373,4 @@ func ResetPassword(c *gin.Context) {
 	DB.Exec("UPDATE verification_codes SET used = true WHERE id = $1", codeID)
 
 	c.JSON(200, gin.H{"message": "password reset successfully"})
-}
-
-// Health handles health check endpoint
-func Health(c *gin.Context) {
-	status := gin.H{
-		"status": "ok",
-		"timestamp": time.Now().Unix(),
-	}
-
-	// Check database connection
-	if DB != nil {
-		if err := DB.Ping(); err != nil {
-			status["database"] = "unhealthy"
-			status["database_error"] = err.Error()
-			c.JSON(503, status)
-			return
-		}
-		status["database"] = "healthy"
-	} else {
-		status["database"] = "not_initialized"
-	}
-
-	// Check K8s client
-	if K8sClient != nil {
-		status["kubernetes"] = "healthy"
-	} else {
-		status["kubernetes"] = "not_initialized"
-	}
-
-	c.JSON(200, status)
 }

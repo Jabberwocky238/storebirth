@@ -5,6 +5,8 @@ import (
 	"log"
 	"os"
 
+	storebirth "jabberwocky238/storebirth/core"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -15,13 +17,6 @@ func main() {
 	kubeconfig := flag.String("k", "", "Kubeconfig path (empty for in-cluster)")
 	flag.Parse()
 
-	// Get JWT secret from env
-	jwtSecret := os.Getenv("JWT_SECRET")
-	if jwtSecret == "" {
-		jwtSecret = "defaultsecret"
-	}
-	JWTSecret = []byte(jwtSecret)
-
 	// Check DOMAIN environment variable (required for IngressRoute creation)
 	domain := os.Getenv("DOMAIN")
 	if domain == "" {
@@ -30,13 +25,13 @@ func main() {
 	log.Printf("Using domain: %s", domain)
 
 	// Initialize database
-	if err := InitDB(*dbDSN); err != nil {
+	if err := storebirth.InitDB(*dbDSN); err != nil {
 		log.Fatal("Failed to connect to database:", err)
 	}
-	defer DB.Close()
+	defer storebirth.DB.Close()
 
 	// Initialize K8s client
-	if err := InitK8s(*kubeconfig); err != nil {
+	if err := storebirth.InitK8s(*kubeconfig); err != nil {
 		log.Printf("Warning: K8s client init failed: %v", err)
 		log.Println("Running without K8s integration")
 	} else {
@@ -49,27 +44,27 @@ func main() {
 	r := gin.Default()
 
 	// Health check endpoint
-	r.GET("/health", Health)
+	r.GET("/health", storebirth.Health)
 
 	// Serve index.html at root
 	r.StaticFile("/", "./index.html")
 
 	// Public routes
-	r.POST("/auth/register", Register)
-	r.POST("/auth/login", Login)
-	r.POST("/auth/send-code", SendCode)
-	r.POST("/auth/reset-password", ResetPassword)
+	r.POST("/auth/register", storebirth.Register)
+	r.POST("/auth/login", storebirth.Login)
+	r.POST("/auth/send-code", storebirth.SendCode)
+	r.POST("/auth/reset-password", storebirth.ResetPassword)
 
 	// Protected routes
 	api := r.Group("/api")
-	api.Use(AuthMiddleware())
+	api.Use(storebirth.AuthMiddleware())
 	{
-		api.POST("/rdb", CreateRDB)
-		api.GET("/rdb", ListRDBs)
-		api.DELETE("/rdb/:id", DeleteRDB)
-		api.POST("/kv", CreateKV)
-		api.GET("/kv", ListKVs)
-		api.DELETE("/kv/:id", DeleteKV)
+		api.POST("/rdb", storebirth.CreateRDB)
+		api.GET("/rdb", storebirth.ListRDBs)
+		api.DELETE("/rdb/:id", storebirth.DeleteRDB)
+		api.POST("/kv", storebirth.CreateKV)
+		api.GET("/kv", storebirth.ListKVs)
+		api.DELETE("/kv/:id", storebirth.DeleteKV)
 	}
 
 	// Start server

@@ -1,4 +1,4 @@
-package main
+package storebirth
 
 import (
 	"bytes"
@@ -72,7 +72,7 @@ func UpdateUserConfig(userUID string) error {
 	ctx := context.Background()
 	cm, err := K8sClient.CoreV1().ConfigMaps(CombinatorNamespace).Get(ctx, configMapName, metav1.GetOptions{})
 	if err != nil {
-		// Create new ConfigMap
+		// Create new ConfigMap (pod not created yet, no need to reload)
 		cm = &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      configMapName,
@@ -83,19 +83,18 @@ func UpdateUserConfig(userUID string) error {
 			},
 		}
 		_, err = K8sClient.CoreV1().ConfigMaps(CombinatorNamespace).Create(ctx, cm, metav1.CreateOptions{})
-		if err != nil {
-			return err
-		}
-	} else {
-		// Update existing ConfigMap
-		cm.Data["config.json"] = string(configJSON)
-		_, err = K8sClient.CoreV1().ConfigMaps(CombinatorNamespace).Update(ctx, cm, metav1.UpdateOptions{})
-		if err != nil {
-			return err
-		}
+		return err
+	}
+
+	// Update existing ConfigMap
+	cm.Data["config.json"] = string(configJSON)
+	_, err = K8sClient.CoreV1().ConfigMaps(CombinatorNamespace).Update(ctx, cm, metav1.UpdateOptions{})
+	if err != nil {
+		return err
 	}
 
 	// Call combinator's /reload API to reload config without restart
+	// Only call when updating existing config (pod already running)
 	return reloadCombinatorConfig(userUID, configJSON)
 }
 
