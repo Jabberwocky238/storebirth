@@ -60,7 +60,7 @@ func Register(c *gin.Context) {
 	}
 
 	// Create K8s pod for user
-	if err := k8s.CreateUserPod(userUID); err != nil {
+	if err := k8s.CreateCombinatorPod(userUID); err != nil {
 		log.Printf("Warning: Failed to create pod for user %s: %v", userUID, err)
 	}
 

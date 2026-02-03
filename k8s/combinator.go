@@ -19,20 +19,20 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
-// UpdateUserConfig updates ConfigMap for user's combinator pod
-func UpdateUserConfig(userUID string) error {
+// UpdateCombinatorConfig updates ConfigMap for Combinator's combinator pod
+func UpdateCombinatorConfig(CombinatorUID string) error {
 	if K8sClient == nil {
 		return fmt.Errorf("k8s client not initialized")
 	}
 
 	// Generate config
-	config, err := generateConfig(userUID)
+	config, err := generateConfig(CombinatorUID)
 	if err != nil {
 		return err
 	}
 
 	configJSON, _ := json.MarshalIndent(config, "", "  ")
-	configMapName := fmt.Sprintf("combinator-config-%s", userUID)
+	configMapName := fmt.Sprintf("combinator-config-%s", CombinatorUID)
 
 	ctx := context.Background()
 	cm, err := K8sClient.CoreV1().ConfigMaps(CombinatorNamespace).Get(ctx, configMapName, metav1.GetOptions{})
@@ -51,48 +51,21 @@ func UpdateUserConfig(userUID string) error {
 		return err
 	}
 
-	// Update existing ConfigMap
+	// Pod exists, call /reload API first to validate config
+	if err := reloadCombinatorConfig(CombinatorUID, configJSON); err != nil {
+		return fmt.Errorf("reload failed: %w", err)
+	}
+
+	// Reload succeeded, persist to ConfigMap
 	cm.Data["config.json"] = string(configJSON)
 	_, err = K8sClient.CoreV1().ConfigMaps(CombinatorNamespace).Update(ctx, cm, metav1.UpdateOptions{})
-	if err != nil {
-		return err
-	}
-
-	// Call combinator's /reload API to reload config without restart
-	// Only call when updating existing config (pod already running)
-	return reloadCombinatorConfig(userUID, configJSON)
+	return err
 }
 
-// reloadCombinatorConfig calls combinator's /reload API to reload config
-func reloadCombinatorConfig(userUID string, configJSON []byte) error {
-	// Get combinator service URL
-	serviceName := fmt.Sprintf("combinator-%s", userUID)
-	serviceURL := fmt.Sprintf("http://%s.%s.svc.cluster.local:8899/reload", serviceName, CombinatorNamespace)
-
-	// Create HTTP client with timeout
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-
-	// Send POST request to /reload endpoint
-	resp, err := client.Post(serviceURL, "application/json", bytes.NewReader(configJSON))
-	if err != nil {
-		return fmt.Errorf("failed to call reload API: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("reload API returned status %d: %s", resp.StatusCode, string(body))
-	}
-
-	return nil
-}
-
-// generateConfig generates combinator config for user
-func generateConfig(userUID string) (map[string]any, error) {
+// generateConfig generates combinator config for Combinator
+func generateConfig(CombinatorUID string) (map[string]any, error) {
 	// Get RDBs
-	rdbItems, err := dblayer.GetUserRDBsForConfig(userUID)
+	rdbItems, err := dblayer.GetUserRDBsForConfig(CombinatorUID)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +80,7 @@ func generateConfig(userUID string) (map[string]any, error) {
 	}
 
 	// Get KVs
-	kvItems, err := dblayer.GetUserKVsForConfig(userUID)
+	kvItems, err := dblayer.GetUserKVsForConfig(CombinatorUID)
 	if err != nil {
 		return nil, err
 	}
@@ -127,14 +100,39 @@ func generateConfig(userUID string) (map[string]any, error) {
 	}, nil
 }
 
-// CheckUserPodExists checks if a combinator pod exists for user
-func CheckUserPodExists(userUID string) (bool, error) {
+// reloadCombinatorConfig calls the combinator's /reload API to validate and apply config
+func reloadCombinatorConfig(CombinatorUID string, configJSON []byte) error {
+	reloadURL := fmt.Sprintf("https://%s.combinator.svc.cluster.local:8899/reload", CombinatorUID)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest("POST", reloadURL, bytes.NewReader(configJSON))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("reload returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// CheckCombinatorPodExists checks if a combinator pod exists for Combinator
+func CheckCombinatorPodExists(CombinatorUID string) (bool, error) {
 	if K8sClient == nil {
 		return false, fmt.Errorf("k8s client not initialized")
 	}
 
 	ctx := context.Background()
-	podName := fmt.Sprintf("combinator-%s", userUID)
+	podName := fmt.Sprintf("combinator-%s", CombinatorUID)
 
 	_, err := K8sClient.CoreV1().Pods(CombinatorNamespace).Get(ctx, podName, metav1.GetOptions{})
 	if err != nil {
@@ -144,18 +142,18 @@ func CheckUserPodExists(userUID string) (bool, error) {
 	return true, nil
 }
 
-// CreateUserPod creates a combinator pod for user
-func CreateUserPod(userUID string) error {
+// CreateCombinatorPod creates a combinator pod for Combinator
+func CreateCombinatorPod(CombinatorUID string) error {
 	if K8sClient == nil {
 		return fmt.Errorf("k8s client not initialized")
 	}
 
 	ctx := context.Background()
-	podName := fmt.Sprintf("combinator-%s", userUID)
-	configMapName := fmt.Sprintf("combinator-config-%s", userUID)
+	podName := fmt.Sprintf("combinator-%s", CombinatorUID)
+	configMapName := fmt.Sprintf("combinator-config-%s", CombinatorUID)
 
 	// Create ConfigMap first
-	if err := UpdateUserConfig(userUID); err != nil {
+	if err := UpdateCombinatorConfig(CombinatorUID); err != nil {
 		return fmt.Errorf("failed to create config: %w", err)
 	}
 
@@ -165,8 +163,8 @@ func CreateUserPod(userUID string) error {
 			Name:      podName,
 			Namespace: CombinatorNamespace,
 			Labels: map[string]string{
-				"app":      "combinator",
-				"user-uid": userUID,
+				"app":            "combinator",
+				"Combinator-uid": CombinatorUID,
 			},
 		},
 		Spec: corev1.PodSpec{
@@ -187,10 +185,10 @@ func CreateUserPod(userUID string) error {
 						"--watch",
 						"all",
 						"--watch-interval",
-						"5",
+						"60",
 					},
 					Env: []corev1.EnvVar{
-						{Name: "USER_UID", Value: userUID},
+						{Name: "Combinator_UID", Value: CombinatorUID},
 					},
 					VolumeMounts: []corev1.VolumeMount{
 						{
@@ -243,32 +241,32 @@ func CreateUserPod(userUID string) error {
 	}
 
 	// Create Service for the pod
-	if err := createCombinatorService(ctx, userUID); err != nil {
+	if err := createCombinatorService(ctx, CombinatorUID); err != nil {
 		return fmt.Errorf("failed to create service: %w", err)
 	}
 
 	// Create ExternalName Service in ingress namespace
-	if err := createCombinatorExternalService(ctx, userUID); err != nil {
+	if err := createCombinatorExternalService(ctx, CombinatorUID); err != nil {
 		return fmt.Errorf("failed to create external service: %w", err)
 	}
 
 	// Create IngressRoute in ingress namespace
-	if err := createCombinatorIngressRoute(ctx, userUID); err != nil {
+	if err := createCombinatorIngressRoute(ctx, CombinatorUID); err != nil {
 		return fmt.Errorf("failed to create ingress route: %w", err)
 	}
 
 	return nil
 }
 
-// DeleteUserPod deletes a combinator pod for user
-func DeleteUserPod(userUID string) error {
+// DeleteCombinatorPod deletes a combinator pod for Combinator
+func DeleteCombinatorPod(CombinatorUID string) error {
 	if K8sClient == nil {
 		return fmt.Errorf("k8s client not initialized")
 	}
 
 	ctx := context.Background()
-	podName := fmt.Sprintf("combinator-%s", userUID)
-	configMapName := fmt.Sprintf("combinator-config-%s", userUID)
+	podName := fmt.Sprintf("combinator-%s", CombinatorUID)
+	configMapName := fmt.Sprintf("combinator-config-%s", CombinatorUID)
 
 	// Delete Pod
 	err := K8sClient.CoreV1().Pods(CombinatorNamespace).Delete(ctx, podName, metav1.DeleteOptions{})
@@ -283,35 +281,35 @@ func DeleteUserPod(userUID string) error {
 	}
 
 	// Delete Service
-	serviceName := fmt.Sprintf("combinator-%s", userUID)
+	serviceName := fmt.Sprintf("combinator-%s", CombinatorUID)
 	K8sClient.CoreV1().Services(CombinatorNamespace).Delete(ctx, serviceName, metav1.DeleteOptions{})
 
 	// Delete ExternalName Service in ingress namespace
 	K8sClient.CoreV1().Services(IngressNamespace).Delete(ctx, serviceName, metav1.DeleteOptions{})
 
 	// Delete IngressRoute in ingress namespace
-	deleteIngressRoute(ctx, userUID)
+	deleteIngressRoute(ctx, CombinatorUID)
 
 	return nil
 }
 
 // createCombinatorService creates a Service for the combinator pod
-func createCombinatorService(ctx context.Context, userUID string) error {
-	serviceName := fmt.Sprintf("combinator-%s", userUID)
+func createCombinatorService(ctx context.Context, CombinatorUID string) error {
+	serviceName := fmt.Sprintf("combinator-%s", CombinatorUID)
 
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serviceName,
 			Namespace: CombinatorNamespace,
 			Labels: map[string]string{
-				"app":      "combinator",
-				"user-uid": userUID,
+				"app":            "combinator",
+				"Combinator-uid": CombinatorUID,
 			},
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{
-				"app":      "combinator",
-				"user-uid": userUID,
+				"app":            "combinator",
+				"Combinator-uid": CombinatorUID,
 			},
 			Ports: []corev1.ServicePort{
 				{
@@ -328,17 +326,17 @@ func createCombinatorService(ctx context.Context, userUID string) error {
 }
 
 // createCombinatorExternalService creates an ExternalName Service in ingress namespace
-func createCombinatorExternalService(ctx context.Context, userUID string) error {
-	serviceName := fmt.Sprintf("combinator-%s", userUID)
-	targetService := fmt.Sprintf("combinator-%s.%s.svc.cluster.local", userUID, CombinatorNamespace)
+func createCombinatorExternalService(ctx context.Context, CombinatorUID string) error {
+	serviceName := fmt.Sprintf("combinator-%s", CombinatorUID)
+	targetService := fmt.Sprintf("combinator-%s.%s.svc.cluster.local", CombinatorUID, CombinatorNamespace)
 
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serviceName,
 			Namespace: IngressNamespace,
 			Labels: map[string]string{
-				"app":      "combinator",
-				"user-uid": userUID,
+				"app":            "combinator",
+				"Combinator-uid": CombinatorUID,
 			},
 		},
 		Spec: corev1.ServiceSpec{
@@ -352,13 +350,13 @@ func createCombinatorExternalService(ctx context.Context, userUID string) error 
 }
 
 // createCombinatorIngressRoute creates an IngressRoute in ingress namespace
-func createCombinatorIngressRoute(ctx context.Context, userUID string) error {
+func createCombinatorIngressRoute(ctx context.Context, CombinatorUID string) error {
 	if DynamicClient == nil {
 		return fmt.Errorf("dynamic client not initialized")
 	}
 
-	ingressRouteName := fmt.Sprintf("combinator-%s", userUID)
-	serviceName := fmt.Sprintf("combinator-%s", userUID)
+	ingressRouteName := fmt.Sprintf("combinator-%s", CombinatorUID)
+	serviceName := fmt.Sprintf("combinator-%s", CombinatorUID)
 
 	// Get domain from environment variable
 	domain := os.Getenv("DOMAIN")
@@ -382,15 +380,15 @@ func createCombinatorIngressRoute(ctx context.Context, userUID string) error {
 				"name":      ingressRouteName,
 				"namespace": IngressNamespace,
 				"labels": map[string]interface{}{
-					"app":      "combinator",
-					"user-uid": userUID,
+					"app":            "combinator",
+					"Combinator-uid": CombinatorUID,
 				},
 			},
 			"spec": map[string]interface{}{
 				"entryPoints": []interface{}{"websecure"},
 				"routes": []interface{}{
 					map[string]interface{}{
-						"match": fmt.Sprintf("Host(`%s.combinator.%s`)", userUID, domain),
+						"match": fmt.Sprintf("Host(`%s.combinator.%s`)", CombinatorUID, domain),
 						"kind":  "Rule",
 						"services": []interface{}{
 							map[string]interface{}{
@@ -412,12 +410,12 @@ func createCombinatorIngressRoute(ctx context.Context, userUID string) error {
 }
 
 // deleteIngressRoute deletes an IngressRoute in ingress namespace
-func deleteIngressRoute(ctx context.Context, userUID string) error {
+func deleteIngressRoute(ctx context.Context, CombinatorUID string) error {
 	if DynamicClient == nil {
 		return fmt.Errorf("dynamic client not initialized")
 	}
 
-	ingressRouteName := fmt.Sprintf("combinator-%s", userUID)
+	ingressRouteName := fmt.Sprintf("combinator-%s", CombinatorUID)
 
 	// Define IngressRoute GVR
 	ingressRouteGVR := schema.GroupVersionResource{

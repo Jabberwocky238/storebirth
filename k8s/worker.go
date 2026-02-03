@@ -65,9 +65,9 @@ func processPendingTasks() {
 	var taskErr error
 	switch taskType {
 	case "config_update":
-		taskErr = UpdateUserConfig(userUID)
+		taskErr = UpdateCombinatorConfig(userUID)
 	case "pod_create":
-		taskErr = CreateUserPod(userUID)
+		taskErr = CreateCombinatorPod(userUID)
 	default:
 		log.Printf("Unknown task type: %s", taskType)
 	}
