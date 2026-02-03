@@ -3,6 +3,9 @@ package handlers
 import (
 	"time"
 
+	"jabberwocky238/storebirth/k8s"
+	"jabberwocky238/storebirth/dblayer"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -14,8 +17,8 @@ func Health(c *gin.Context) {
 	}
 
 	// Check database connection
-	if DB != nil {
-		if err := DB.Ping(); err != nil {
+	if dblayer.DB != nil {
+		if err := dblayer.DB.Ping(); err != nil {
 			status["database"] = "unhealthy"
 			status["database_error"] = err.Error()
 			c.JSON(503, status)
@@ -27,7 +30,7 @@ func Health(c *gin.Context) {
 	}
 
 	// Check K8s client
-	if K8sClient != nil {
+	if k8s.K8sClient != nil {
 		status["kubernetes"] = "healthy"
 	} else {
 		status["kubernetes"] = "not_initialized"

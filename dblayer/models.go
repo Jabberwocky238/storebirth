@@ -1,10 +1,6 @@
-package storebirth
+package dblayer
 
-import (
-	"time"
-
-	_ "github.com/lib/pq"
-)
+import "time"
 
 // User model
 type User struct {
@@ -35,4 +31,24 @@ type KV struct {
 	Type    string `json:"kv_type"`
 	URL     string `json:"url"`
 	Enabled bool   `json:"enabled"`
+}
+
+// VerificationCode model
+type VerificationCode struct {
+	ID        int       `json:"-"`
+	Email     string    `json:"email"`
+	Code      string    `json:"code"`
+	ExpiresAt time.Time `json:"expires_at"`
+	Used      bool      `json:"used"`
+}
+
+// ConfigTask model
+type ConfigTask struct {
+	ID        int       `json:"-"`
+	UserUID   string    `json:"user_uid"`
+	TaskType  string    `json:"task_type"`
+	Status    string    `json:"status"`
+	ErrorMsg  string    `json:"error_msg"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }

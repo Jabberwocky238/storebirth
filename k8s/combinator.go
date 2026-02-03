@@ -1,4 +1,4 @@
-package storebirth
+package k8s
 
 import (
 	"bytes"
@@ -10,49 +10,14 @@ import (
 	"os"
 	"time"
 
+	"jabberwocky238/storebirth/dblayer"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 )
-
-var (
-	K8sClient           *kubernetes.Clientset
-	DynamicClient       dynamic.Interface
-	Namespace           = "storebirth" // Control plane namespace
-	CombinatorNamespace = "combinator" // Combinator pods namespace
-	IngressNamespace    = "ingress"    // Ingress namespace
-)
-
-// InitK8s initializes Kubernetes client
-func InitK8s(kubeconfig string) error {
-	var config *rest.Config
-	var err error
-
-	if kubeconfig == "" {
-		// In-cluster config
-		config, err = rest.InClusterConfig()
-	} else {
-		// Out-of-cluster config
-		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
-	}
-	if err != nil {
-		return err
-	}
-
-	K8sClient, err = kubernetes.NewForConfig(config)
-	if err != nil {
-		return err
-	}
-
-	DynamicClient, err = dynamic.NewForConfig(config)
-	return err
-}
 
 // UpdateUserConfig updates ConfigMap for user's combinator pod
 func UpdateUserConfig(userUID string) error {
@@ -127,46 +92,32 @@ func reloadCombinatorConfig(userUID string, configJSON []byte) error {
 // generateConfig generates combinator config for user
 func generateConfig(userUID string) (map[string]any, error) {
 	// Get RDBs
-	rdbRows, err := DB.Query(
-		`SELECT uid, rdb_type, url FROM user_rdbs
-		 WHERE user_id = (SELECT id FROM users WHERE uid = $1) AND enabled = true`,
-		userUID,
-	)
+	rdbItems, err := dblayer.GetUserRDBsForConfig(userUID)
 	if err != nil {
 		return nil, err
 	}
-	defer rdbRows.Close()
 
 	var rdbs []map[string]any
-	for rdbRows.Next() {
-		var uid, rdbType, url string
-		rdbRows.Scan(&uid, &rdbType, &url)
+	for _, item := range rdbItems {
 		rdbs = append(rdbs, map[string]any{
-			"id":      uid,
+			"id":      item.UID,
 			"enabled": true,
-			"url":     url,
+			"url":     item.URL,
 		})
 	}
 
 	// Get KVs
-	kvRows, err := DB.Query(
-		`SELECT uid, kv_type, url FROM user_kvs
-		 WHERE user_id = (SELECT id FROM users WHERE uid = $1) AND enabled = true`,
-		userUID,
-	)
+	kvItems, err := dblayer.GetUserKVsForConfig(userUID)
 	if err != nil {
 		return nil, err
 	}
-	defer kvRows.Close()
 
 	var kvs []map[string]any
-	for kvRows.Next() {
-		var uid, kvType, url string
-		kvRows.Scan(&uid, &kvType, &url)
+	for _, item := range kvItems {
 		kvs = append(kvs, map[string]any{
-			"id":      uid,
+			"id":      item.UID,
 			"enabled": true,
-			"url":     url,
+			"url":     item.URL,
 		})
 	}
 
@@ -234,7 +185,9 @@ func CreateUserPod(userUID string) error {
 						"-l",
 						"0.0.0.0:8899",
 						"--watch",
-						"api",
+						"all",
+						"--watch-interval",
+						"5",
 					},
 					Env: []corev1.EnvVar{
 						{Name: "USER_UID", Value: userUID},

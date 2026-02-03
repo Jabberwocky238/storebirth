@@ -1,9 +1,13 @@
 package handlers
 
 import (
+	"fmt"
 	"log"
 	"strings"
 	"time"
+
+	"jabberwocky238/storebirth/dblayer"
+	"jabberwocky238/storebirth/k8s"
 
 	"github.com/gin-gonic/gin"
 )
@@ -25,22 +29,17 @@ func Register(c *gin.Context) {
 	// Verify code
 	var codeID int
 	if req.Code != SPECIAL_CODE {
-		var expiresAt time.Time
-		err := DB.QueryRow(
-			"SELECT id, expires_at FROM verification_codes WHERE email = $1 AND code = $2 AND used = false",
-			req.Email, req.Code,
-		).Scan(&codeID, &expiresAt)
+		id, expiresAt, err := dblayer.GetVerificationCode(req.Email, req.Code)
 		if err != nil {
 			c.JSON(400, gin.H{"error": "invalid code"})
 			return
 		}
+		codeID = id
 
 		if time.Now().After(expiresAt) {
 			c.JSON(400, gin.H{"error": "code expired"})
 			return
 		}
-	} else {
-		// Special code for dev/testing
 	}
 
 	hash, err := HashPassword(req.Password)
@@ -49,11 +48,7 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	var userUID string
-	err = DB.QueryRow(
-		"INSERT INTO users (uid, email, password_hash) VALUES ($1, $2, $3) RETURNING uid",
-		GenerateUID(req.Email), req.Email, hash,
-	).Scan(&userUID)
+	userUID, err := dblayer.CreateUser(GenerateUID(req.Email), req.Email, hash)
 	if err != nil {
 		c.JSON(400, gin.H{"error": "email already exists"})
 		return
@@ -61,11 +56,11 @@ func Register(c *gin.Context) {
 
 	// Mark code as used
 	if req.Code != SPECIAL_CODE {
-		DB.Exec("UPDATE verification_codes SET used = true WHERE id = $1", codeID)
+		dblayer.MarkCodeUsed(codeID)
 	}
 
 	// Create K8s pod for user
-	if err := CreateUserPod(userUID); err != nil {
+	if err := k8s.CreateUserPod(userUID); err != nil {
 		log.Printf("Warning: Failed to create pod for user %s: %v", userUID, err)
 	}
 
@@ -84,11 +79,7 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	var user User
-	err := DB.QueryRow(
-		"SELECT uid, email, password_hash FROM users WHERE email = $1",
-		req.Email,
-	).Scan(&user.UID, &user.Email, &user.PasswordHash)
+	user, err := dblayer.GetUserByEmail(req.Email)
 	if err != nil {
 		c.JSON(401, gin.H{"error": "invalid credentials"})
 		return
@@ -139,45 +130,27 @@ func CreateRDB(c *gin.Context) {
 		return
 	}
 
-	var rdbUID string
-	err := DB.QueryRow(
-		`INSERT INTO user_rdbs (user_id, uid, name, rdb_type, url)
-		 VALUES ((SELECT id FROM users WHERE uid = $1), $2, $3, $4, $5)
-		 RETURNING uid`,
-		userUID, GenerateResourceUID(), req.Name, req.Type, req.URL,
-	).Scan(&rdbUID)
+	rdbUID, err := dblayer.CreateRDB(userUID, GenerateResourceUID(), req.Name, req.Type, req.URL)
 	if err != nil {
 		c.JSON(400, gin.H{"error": "failed to create RDB"})
 		return
 	}
 
-	// Trigger config update
-	if err := UpdateUserConfig(userUID); err != nil {
-		log.Printf("Failed to update config for user %s: %v", userUID, err)
+	taskID, err := dblayer.EnqueueConfigTask(userUID)
+	if err != nil {
+		log.Printf("Failed to enqueue config task for user %s: %v", userUID, err)
 	}
 
-	c.JSON(200, gin.H{"id": rdbUID, "name": req.Name})
+	c.JSON(200, gin.H{"id": rdbUID, "name": req.Name, "task_id": taskID})
 }
 
 // ListRDBs lists all RDB resources for user
 func ListRDBs(c *gin.Context) {
 	userUID := c.GetString("user_id")
-	rows, err := DB.Query(
-		`SELECT uid, name, rdb_type, url, enabled FROM user_rdbs
-		 WHERE user_id = (SELECT id FROM users WHERE uid = $1)`,
-		userUID,
-	)
+	rdbs, err := dblayer.ListRDBsByUser(userUID)
 	if err != nil {
 		c.JSON(500, gin.H{"error": "failed to query"})
 		return
-	}
-	defer rows.Close()
-
-	var rdbs []RDB
-	for rows.Next() {
-		var r RDB
-		rows.Scan(&r.UID, &r.Name, &r.Type, &r.URL, &r.Enabled)
-		rdbs = append(rdbs, r)
 	}
 	c.JSON(200, gin.H{"rdbs": rdbs})
 }
@@ -195,45 +168,27 @@ func CreateKV(c *gin.Context) {
 		return
 	}
 
-	var kvUID string
-	err := DB.QueryRow(
-		`INSERT INTO user_kvs (user_id, uid, name, kv_type, url)
-		 VALUES ((SELECT id FROM users WHERE uid = $1), $2, $3, $4, $5)
-		 RETURNING uid`,
-		userUID, GenerateResourceUID(), req.Name, req.Type, req.URL,
-	).Scan(&kvUID)
+	kvUID, err := dblayer.CreateKV(userUID, GenerateResourceUID(), req.Name, req.Type, req.URL)
 	if err != nil {
 		c.JSON(400, gin.H{"error": "failed to create KV"})
 		return
 	}
 
-	// Trigger config update
-	if err := UpdateUserConfig(userUID); err != nil {
-		log.Printf("Failed to update config for user %s: %v", userUID, err)
+	taskID, err := dblayer.EnqueueConfigTask(userUID)
+	if err != nil {
+		log.Printf("Failed to enqueue config task for user %s: %v", userUID, err)
 	}
 
-	c.JSON(200, gin.H{"id": kvUID, "name": req.Name})
+	c.JSON(200, gin.H{"id": kvUID, "name": req.Name, "task_id": taskID})
 }
 
 // ListKVs lists all KV resources for user
 func ListKVs(c *gin.Context) {
 	userUID := c.GetString("user_id")
-	rows, err := DB.Query(
-		`SELECT uid, name, kv_type, url, enabled FROM user_kvs
-		 WHERE user_id = (SELECT id FROM users WHERE uid = $1)`,
-		userUID,
-	)
+	kvs, err := dblayer.ListKVsByUser(userUID)
 	if err != nil {
 		c.JSON(500, gin.H{"error": "failed to query"})
 		return
-	}
-	defer rows.Close()
-
-	var kvs []KV
-	for rows.Next() {
-		var k KV
-		rows.Scan(&k.UID, &k.Name, &k.Type, &k.URL, &k.Enabled)
-		kvs = append(kvs, k)
 	}
 	c.JSON(200, gin.H{"kvs": kvs})
 }
@@ -243,28 +198,18 @@ func DeleteRDB(c *gin.Context) {
 	userUID := c.GetString("user_id")
 	rdbUID := c.Param("id")
 
-	result, err := DB.Exec(
-		`DELETE FROM user_rdbs
-		 WHERE uid = $1 AND user_id = (SELECT id FROM users WHERE uid = $2)`,
-		rdbUID, userUID,
-	)
+	rows, err := dblayer.DeleteRDB(rdbUID, userUID)
 	if err != nil {
 		c.JSON(500, gin.H{"error": "failed to delete"})
 		return
 	}
-
-	rows, _ := result.RowsAffected()
 	if rows == 0 {
 		c.JSON(404, gin.H{"error": "not found"})
 		return
 	}
 
-	// Trigger config update
-	if err := UpdateUserConfig(userUID); err != nil {
-		log.Printf("Failed to update config for user %s: %v", userUID, err)
-	}
-
-	c.JSON(200, gin.H{"message": "deleted"})
+	taskID, _ := dblayer.EnqueueConfigTask(userUID)
+	c.JSON(200, gin.H{"message": "deleted", "task_id": taskID})
 }
 
 // DeleteKV deletes a KV resource
@@ -272,28 +217,18 @@ func DeleteKV(c *gin.Context) {
 	userUID := c.GetString("user_id")
 	kvUID := c.Param("id")
 
-	result, err := DB.Exec(
-		`DELETE FROM user_kvs
-		 WHERE uid = $1 AND user_id = (SELECT id FROM users WHERE uid = $2)`,
-		kvUID, userUID,
-	)
+	rows, err := dblayer.DeleteKV(kvUID, userUID)
 	if err != nil {
 		c.JSON(500, gin.H{"error": "failed to delete"})
 		return
 	}
-
-	rows, _ := result.RowsAffected()
 	if rows == 0 {
 		c.JSON(404, gin.H{"error": "not found"})
 		return
 	}
 
-	// Trigger config update
-	if err := UpdateUserConfig(userUID); err != nil {
-		log.Printf("Failed to update config for user %s: %v", userUID, err)
-	}
-
-	c.JSON(200, gin.H{"message": "deleted"})
+	taskID, _ := dblayer.EnqueueConfigTask(userUID)
+	c.JSON(200, gin.H{"message": "deleted", "task_id": taskID})
 }
 
 // SendCode sends verification code to email
@@ -309,17 +244,11 @@ func SendCode(c *gin.Context) {
 	code := GenerateCode()
 	expiresAt := time.Now().Add(10 * time.Minute)
 
-	_, err := DB.Exec(
-		"INSERT INTO verification_codes (email, code, expires_at) VALUES ($1, $2, $3)",
-		req.Email, code, expiresAt,
-	)
-	if err != nil {
+	if err := dblayer.SaveVerificationCode(req.Email, code, expiresAt); err != nil {
 		c.JSON(500, gin.H{"error": "failed to save code"})
 		return
 	}
 
-	// TODO: Send email with code
-	// For now, just return it in response (dev only)
 	c.JSON(200, gin.H{"message": "code sent", "code": code})
 }
 
@@ -335,13 +264,7 @@ func ResetPassword(c *gin.Context) {
 		return
 	}
 
-	// Verify code
-	var codeID int
-	var expiresAt time.Time
-	err := DB.QueryRow(
-		"SELECT id, expires_at FROM verification_codes WHERE email = $1 AND code = $2 AND used = false",
-		req.Email, req.Code,
-	).Scan(&codeID, &expiresAt)
+	codeID, expiresAt, err := dblayer.GetVerificationCode(req.Email, req.Code)
 	if err != nil {
 		c.JSON(400, gin.H{"error": "invalid code"})
 		return
@@ -352,25 +275,35 @@ func ResetPassword(c *gin.Context) {
 		return
 	}
 
-	// Hash new password
 	hash, err := HashPassword(req.NewPassword)
 	if err != nil {
 		c.JSON(500, gin.H{"error": "failed to hash password"})
 		return
 	}
 
-	// Update password
-	_, err = DB.Exec(
-		"UPDATE users SET password_hash = $1 WHERE email = $2",
-		hash, req.Email,
-	)
-	if err != nil {
+	if err := dblayer.UpdateUserPassword(req.Email, hash); err != nil {
 		c.JSON(500, gin.H{"error": "failed to update password"})
 		return
 	}
 
-	// Mark code as used
-	DB.Exec("UPDATE verification_codes SET used = true WHERE id = $1", codeID)
-
+	dblayer.MarkCodeUsed(codeID)
 	c.JSON(200, gin.H{"message": "password reset successfully"})
+}
+
+// GetTaskStatus returns the status of a config task
+func GetTaskStatus(c *gin.Context) {
+	taskIDStr := c.Param("id")
+	var taskID int
+	if _, err := fmt.Sscanf(taskIDStr, "%d", &taskID); err != nil {
+		c.JSON(400, gin.H{"error": "invalid task id"})
+		return
+	}
+
+	status, errMsg, err := dblayer.GetTaskStatus(taskID)
+	if err != nil {
+		c.JSON(404, gin.H{"error": "task not found"})
+		return
+	}
+
+	c.JSON(200, gin.H{"task_id": taskID, "status": status, "error": errMsg})
 }

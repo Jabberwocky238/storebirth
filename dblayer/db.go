@@ -1,4 +1,4 @@
-package storebirth
+package dblayer
 
 import (
 	"database/sql"
