@@ -101,8 +101,8 @@ func generateConfig(CombinatorUID string) (map[string]any, error) {
 }
 
 // reloadCombinatorConfig calls the combinator's /reload API to validate and apply config
-func reloadCombinatorConfig(CombinatorUID string, configJSON []byte) error {
-	reloadURL := fmt.Sprintf("https://%s.combinator.svc.cluster.local:8899/reload", CombinatorUID)
+func reloadCombinatorConfig(userUID string, configJSON []byte) error {
+	reloadURL := fmt.Sprintf("http://combinator-%s.%s.svc.cluster.local:8899/reload", userUID, CombinatorNamespace)
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest("POST", reloadURL, bytes.NewReader(configJSON))
@@ -163,8 +163,8 @@ func CreateCombinatorPod(CombinatorUID string) error {
 			Name:      podName,
 			Namespace: CombinatorNamespace,
 			Labels: map[string]string{
-				"app":            "combinator",
-				"Combinator-uid": CombinatorUID,
+				"app":      "combinator",
+				"user-uid": CombinatorUID,
 			},
 		},
 		Spec: corev1.PodSpec{
@@ -188,7 +188,7 @@ func CreateCombinatorPod(CombinatorUID string) error {
 						"60",
 					},
 					Env: []corev1.EnvVar{
-						{Name: "Combinator_UID", Value: CombinatorUID},
+						{Name: "USER_UID", Value: CombinatorUID},
 					},
 					VolumeMounts: []corev1.VolumeMount{
 						{
@@ -302,14 +302,14 @@ func createCombinatorService(ctx context.Context, CombinatorUID string) error {
 			Name:      serviceName,
 			Namespace: CombinatorNamespace,
 			Labels: map[string]string{
-				"app":            "combinator",
-				"Combinator-uid": CombinatorUID,
+				"app":      "combinator",
+				"user-uid": CombinatorUID,
 			},
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{
-				"app":            "combinator",
-				"Combinator-uid": CombinatorUID,
+				"app":      "combinator",
+				"user-uid": CombinatorUID,
 			},
 			Ports: []corev1.ServicePort{
 				{
@@ -335,8 +335,8 @@ func createCombinatorExternalService(ctx context.Context, CombinatorUID string) 
 			Name:      serviceName,
 			Namespace: IngressNamespace,
 			Labels: map[string]string{
-				"app":            "combinator",
-				"Combinator-uid": CombinatorUID,
+				"app":      "combinator",
+				"user-uid": CombinatorUID,
 			},
 		},
 		Spec: corev1.ServiceSpec{
@@ -380,8 +380,8 @@ func createCombinatorIngressRoute(ctx context.Context, CombinatorUID string) err
 				"name":      ingressRouteName,
 				"namespace": IngressNamespace,
 				"labels": map[string]interface{}{
-					"app":            "combinator",
-					"Combinator-uid": CombinatorUID,
+					"app":      "combinator",
+					"user-uid": CombinatorUID,
 				},
 			},
 			"spec": map[string]interface{}{
