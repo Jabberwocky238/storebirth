@@ -63,22 +63,20 @@ func main() {
 	api := r.Group("/api")
 	api.Use(handlers.AuthMiddleware())
 	{
-		// Read-only routes (no signature required)
 		api.GET("/rdb", handlers.ListRDBs)
 		api.GET("/kv", handlers.ListKVs)
 		api.GET("/worker", handlers.ListWorkers)
 		api.GET("/worker/:id", handlers.GetWorker)
+		api.POST("/rdb", handlers.CreateRDB)
+		api.DELETE("/rdb/:id", handlers.DeleteRDB)
+		api.POST("/kv", handlers.CreateKV)
+		api.DELETE("/kv/:id", handlers.DeleteKV)
 	}
 
 	// Sensitive routes (signature required)
 	sensitive := r.Group("/api")
-	sensitive.Use(handlers.AuthMiddleware())
 	sensitive.Use(handlers.SignatureMiddleware())
 	{
-		sensitive.POST("/rdb", handlers.CreateRDB)
-		sensitive.DELETE("/rdb/:id", handlers.DeleteRDB)
-		sensitive.POST("/kv", handlers.CreateKV)
-		sensitive.DELETE("/kv/:id", handlers.DeleteKV)
 		sensitive.POST("/worker", handlers.RegisterWorker)
 		sensitive.DELETE("/worker/:id", handlers.DeleteWorker)
 	}

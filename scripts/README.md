@@ -2,6 +2,13 @@
 
 This guide will walk you through deploying the Console control plane on a K3s cluster.
 
+如需克隆项目时同时拉取 submodule：                                                                                                 
+git clone --recurse-submodules <repo-url>                                                                                        
+
+或在已克隆的项目中初始化：
+
+git submodule update --init --recursive
+
 ## Quick Start - Download Configuration Files
 
 Download all required configuration files first:
