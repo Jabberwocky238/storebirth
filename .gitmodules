@@ -1,0 +1,3 @@
+[submodule "gh-action"]
+	path = gh-action
+	url = https://github.com/Jabberwocky238/combinator-action

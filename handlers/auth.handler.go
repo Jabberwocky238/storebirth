@@ -138,7 +138,7 @@ func SignatureMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		userID := c.GetString("user_id")
+		userID := c.GetHeader("X-Combinator-UserID")
 		if userID == "" {
 			c.JSON(401, gin.H{"error": "user_id required"})
 			c.Abort()

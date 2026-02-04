@@ -166,6 +166,9 @@ func CreateCombinatorPod(CombinatorUID string) error {
 			},
 		},
 		Spec: corev1.PodSpec{
+			NodeSelector: map[string]string{
+				"project": "combinator-affinitive",
+			},
 			Containers: []corev1.Container{
 				{
 					Name:            "combinator",
