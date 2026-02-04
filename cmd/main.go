@@ -5,9 +5,9 @@ import (
 	"log"
 	"os"
 
-	"jabberwocky238/storebirth/dblayer"
-	"jabberwocky238/storebirth/handlers"
-	"jabberwocky238/storebirth/k8s"
+	"jabberwocky238/console/dblayer"
+	"jabberwocky238/console/handlers"
+	"jabberwocky238/console/k8s"
 
 	"github.com/gin-gonic/gin"
 )
@@ -25,6 +25,7 @@ func main() {
 		log.Fatal("DOMAIN environment variable is required")
 	}
 	log.Printf("Using domain: %s", domain)
+	k8s.Domain = domain
 
 	// Initialize database
 	if err := dblayer.InitDB(*dbDSN); err != nil {
@@ -48,8 +49,9 @@ func main() {
 	// Health check endpoint
 	r.GET("/health", handlers.Health)
 
-	// Serve index.html at root
+	// Serve static files
 	r.StaticFile("/", "./index.html")
+	r.StaticFile("/index.js", "./index.js")
 
 	// Public routes
 	r.POST("/auth/register", handlers.Register)
@@ -61,12 +63,24 @@ func main() {
 	api := r.Group("/api")
 	api.Use(handlers.AuthMiddleware())
 	{
-		api.POST("/rdb", handlers.CreateRDB)
+		// Read-only routes (no signature required)
 		api.GET("/rdb", handlers.ListRDBs)
-		api.DELETE("/rdb/:id", handlers.DeleteRDB)
-		api.POST("/kv", handlers.CreateKV)
 		api.GET("/kv", handlers.ListKVs)
-		api.DELETE("/kv/:id", handlers.DeleteKV)
+		api.GET("/worker", handlers.ListWorkers)
+		api.GET("/worker/:id", handlers.GetWorker)
+	}
+
+	// Sensitive routes (signature required)
+	sensitive := r.Group("/api")
+	sensitive.Use(handlers.AuthMiddleware())
+	sensitive.Use(handlers.SignatureMiddleware())
+	{
+		sensitive.POST("/rdb", handlers.CreateRDB)
+		sensitive.DELETE("/rdb/:id", handlers.DeleteRDB)
+		sensitive.POST("/kv", handlers.CreateKV)
+		sensitive.DELETE("/kv/:id", handlers.DeleteKV)
+		sensitive.POST("/worker", handlers.RegisterWorker)
+		sensitive.DELETE("/worker/:id", handlers.DeleteWorker)
 	}
 
 	// Start server

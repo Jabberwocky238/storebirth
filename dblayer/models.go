@@ -8,6 +8,8 @@ type User struct {
 	UID          string    `json:"id"`
 	Email        string    `json:"email"`
 	PasswordHash string    `json:"-"`
+	PublicKey    string    `json:"-"`
+	PrivateKey   string    `json:"-"`
 	CreatedAt    time.Time `json:"created_at"`
 }
 
@@ -44,4 +46,17 @@ type VerificationCode struct {
 	Code      string    `json:"code"`
 	ExpiresAt time.Time `json:"expires_at"`
 	Used      bool      `json:"used"`
+}
+
+// Worker model
+type Worker struct {
+	ID        int       `json:"-"`
+	WorkerID  string    `json:"worker_id"`
+	OwnerID   string    `json:"owner_id"`
+	Image     string    `json:"image"`
+	Port      int       `json:"port"`
+	Status    string    `json:"status"`
+	ErrorMsg  string    `json:"error_msg,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }

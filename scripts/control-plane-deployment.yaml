@@ -3,45 +3,45 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: storebirth
+  name: console
 ---
 # PostgreSQL PersistentVolume (HostPath)
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: postgres-pv
-spec:
-  capacity:
-    storage: 10Gi
-  accessModes:
-    - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: manual
-  hostPath:
-    path: /home/ubuntu/control-plane-psql
-    type: DirectoryOrCreate
+# apiVersion: v1
+# kind: PersistentVolume
+# metadata:
+#   name: postgres-pv
+# spec:
+#   capacity:
+#     storage: 10Gi
+#   accessModes:
+#     - ReadWriteOnce
+#   persistentVolumeReclaimPolicy: Retain
+#   storageClassName: manual
+#   hostPath:
+#     path: /home/ubuntu/control-plane-psql
+#     type: DirectoryOrCreate
 
 ---
 # PostgreSQL PersistentVolumeClaim
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: postgres-pvc
-  namespace: storebirth
-spec:
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: manual
-  resources:
-    requests:
-      storage: 10Gi
+# apiVersion: v1
+# kind: PersistentVolumeClaim
+# metadata:
+#   name: postgres-pvc
+#   namespace: console
+# spec:
+#   accessModes:
+#     - ReadWriteOnce
+#   storageClassName: manual
+#   resources:
+#     requests:
+#       storage: 10Gi
 
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: postgres-init
-  namespace: storebirth
+  namespace: console
 data:
   init.sql: |
     -- Control Plane Database Schema
@@ -50,6 +50,8 @@ data:
         uid VARCHAR(64) UNIQUE NOT NULL,
         email VARCHAR(255) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
+        private_key TEXT NOT NULL,
+        public_key TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -61,6 +63,8 @@ data:
         rdb_type VARCHAR(50) NOT NULL,
         url TEXT NOT NULL,
         enabled BOOLEAN DEFAULT true,
+        status VARCHAR(16) NOT NULL DEFAULT 'pending',
+        error_msg TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(user_id, uid)
     );
@@ -73,6 +77,8 @@ data:
         kv_type VARCHAR(50) NOT NULL,
         url TEXT NOT NULL,
         enabled BOOLEAN DEFAULT true,
+        status VARCHAR(16) NOT NULL DEFAULT 'pending',
+        error_msg TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(user_id, uid)
     );
@@ -86,9 +92,24 @@ data:
         used BOOLEAN DEFAULT false
     );
 
+    CREATE TABLE IF NOT EXISTS workers (
+        id SERIAL PRIMARY KEY,
+        worker_id VARCHAR(64) NOT NULL,
+        owner_id VARCHAR(64) NOT NULL,
+        image TEXT NOT NULL,
+        port INTEGER NOT NULL,
+        status VARCHAR(16) NOT NULL DEFAULT 'pending',
+        error_msg TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(worker_id, owner_id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
     CREATE INDEX IF NOT EXISTS idx_user_rdbs_user_id ON user_rdbs(user_id);
+    CREATE INDEX IF NOT EXISTS idx_user_rdbs_status ON user_rdbs(status);
     CREATE INDEX IF NOT EXISTS idx_user_kvs_user_id ON user_kvs(user_id);
+    CREATE INDEX IF NOT EXISTS idx_user_kvs_status ON user_kvs(status);
     CREATE INDEX IF NOT EXISTS idx_verification_codes_email ON verification_codes(email);
 
 ---
@@ -96,7 +117,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: postgres
-  namespace: storebirth
+  namespace: console
 spec:
   ports:
   - port: 5432
@@ -108,7 +129,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: postgres
-  namespace: storebirth
+  namespace: console
 spec:
   replicas: 1
   selector:
@@ -138,8 +159,9 @@ spec:
           mountPath: /docker-entrypoint-initdb.d
       volumes:
       - name: data
-        persistentVolumeClaim:
-          claimName: postgres-pvc
+        # persistentVolumeClaim:
+        #   claimName: postgres-pvc   
+        emptyDir: {} # Use emptyDir for simplicity; replace with PVC in production
       - name: init
         configMap:
           name: postgres-init
@@ -150,7 +172,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: control-plane-secret
-  namespace: storebirth
+  namespace: console
 type: Opaque
 stringData:
   jwt-secret: "change-me-in-production"
@@ -161,7 +183,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: control-plane
-  namespace: storebirth
+  namespace: console
 spec:
   type: NodePort
   ports:
@@ -177,7 +199,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: control-plane
-  namespace: storebirth
+  namespace: console
 spec:
   replicas: 1
   selector:
@@ -191,7 +213,7 @@ spec:
       serviceAccountName: control-plane-sa
       containers:
       - name: control-plane
-        image: ghcr.io/jabberwocky238/storebirth:latest
+        image: ghcr.io/jabberwocky238/console:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 9900
@@ -214,7 +236,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: control-plane-sa
-  namespace: storebirth
+  namespace: console
 ---
 # ClusterRole for managing pods, configmaps, services, and ingressroutes
 apiVersion: rbac.authorization.k8s.io/v1
@@ -224,6 +246,9 @@ metadata:
 rules:
 - apiGroups: [""]
   resources: ["pods", "configmaps", "services"]
+  verbs: ["get", "list", "create", "update", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments"]
   verbs: ["get", "list", "create", "update", "delete"]
 - apiGroups: ["traefik.io"]
   resources: ["ingressroutes"]
@@ -238,7 +263,7 @@ metadata:
 subjects:
 - kind: ServiceAccount
   name: control-plane-sa
-  namespace: storebirth
+  namespace: console
 roleRef:
   kind: ClusterRole
   name: control-plane-role

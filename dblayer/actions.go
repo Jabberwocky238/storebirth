@@ -22,11 +22,11 @@ func MarkCodeUsed(codeID int) error {
 }
 
 // CreateUser 创建用户
-func CreateUser(uid, email, passwordHash string) (string, error) {
+func CreateUser(uid, email, passwordHash, publicKey, privateKey string) (string, error) {
 	var userUID string
 	err := DB.QueryRow(
-		"INSERT INTO users (uid, email, password_hash) VALUES ($1, $2, $3) RETURNING uid",
-		uid, email, passwordHash,
+		"INSERT INTO users (uid, email, password_hash, public_key, private_key) VALUES ($1, $2, $3, $4, $5) RETURNING uid",
+		uid, email, passwordHash, publicKey, privateKey,
 	).Scan(&userUID)
 	return userUID, err
 }
@@ -35,9 +35,9 @@ func CreateUser(uid, email, passwordHash string) (string, error) {
 func GetUserByEmail(email string) (*User, error) {
 	var user User
 	err := DB.QueryRow(
-		"SELECT uid, email, password_hash FROM users WHERE email = $1",
+		"SELECT uid, email, password_hash, public_key, private_key FROM users WHERE email = $1",
 		email,
-	).Scan(&user.UID, &user.Email, &user.PasswordHash)
+	).Scan(&user.UID, &user.Email, &user.PasswordHash, &user.PublicKey, &user.PrivateKey)
 	if err != nil {
 		return nil, err
 	}
@@ -60,6 +60,26 @@ func UpdateUserPassword(email, passwordHash string) error {
 		passwordHash, email,
 	)
 	return err
+}
+
+// GetUserPrivateKey 通过 UID 获取用户私钥
+func GetUserPrivateKey(uid string) (string, error) {
+	var privateKey string
+	err := DB.QueryRow(
+		"SELECT private_key FROM users WHERE uid = $1",
+		uid,
+	).Scan(&privateKey)
+	return privateKey, err
+}
+
+// GetUserPublicKey 通过 UID 获取用户公钥
+func GetUserPublicKey(uid string) (string, error) {
+	var publicKey string
+	err := DB.QueryRow(
+		"SELECT public_key FROM users WHERE uid = $1",
+		uid,
+	).Scan(&publicKey)
+	return publicKey, err
 }
 
 // ========== RDB Actions ==========
@@ -232,4 +252,64 @@ func GetUserKVsForConfig(userUID string) ([]KVConfigItem, error) {
 		items = append(items, item)
 	}
 	return items, nil
+}
+
+// ========== Worker Actions ==========
+
+// CreateWorker 创建 Worker
+func CreateWorker(workerID, ownerID, image string, port int) error {
+	_, err := DB.Exec(`
+		INSERT INTO workers (worker_id, owner_id, image, port)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (worker_id, owner_id) DO UPDATE SET image = $3, port = $4, updated_at = NOW()
+	`, workerID, ownerID, image, port)
+	return err
+}
+
+// GetWorker 获取 Worker
+func GetWorker(workerID, ownerID string) (*Worker, error) {
+	var w Worker
+	err := DB.QueryRow(`
+		SELECT worker_id, owner_id, image, port, status, COALESCE(error_msg, '')
+		FROM workers WHERE worker_id = $1 AND owner_id = $2
+	`, workerID, ownerID).Scan(&w.WorkerID, &w.OwnerID, &w.Image, &w.Port, &w.Status, &w.ErrorMsg)
+	if err != nil {
+		return nil, err
+	}
+	return &w, nil
+}
+
+// ListWorkersByOwner 获取用户的所有 Worker
+func ListWorkersByOwner(ownerID string) ([]Worker, error) {
+	rows, err := DB.Query(`
+		SELECT worker_id, owner_id, image, port, status, COALESCE(error_msg, '')
+		FROM workers WHERE owner_id = $1
+	`, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var workers []Worker
+	for rows.Next() {
+		var w Worker
+		rows.Scan(&w.WorkerID, &w.OwnerID, &w.Image, &w.Port, &w.Status, &w.ErrorMsg)
+		workers = append(workers, w)
+	}
+	return workers, nil
+}
+
+// DeleteWorker 删除 Worker
+func DeleteWorker(workerID, ownerID string) error {
+	_, err := DB.Exec(`DELETE FROM workers WHERE worker_id = $1 AND owner_id = $2`, workerID, ownerID)
+	return err
+}
+
+// SetWorkerStatus 设置 Worker 状态
+func SetWorkerStatus(workerID, ownerID, status, errorMsg string) error {
+	_, err := DB.Exec(`
+		UPDATE workers SET status = $1, error_msg = $2, updated_at = NOW()
+		WHERE worker_id = $3 AND owner_id = $4
+	`, status, errorMsg, workerID, ownerID)
+	return err
 }
