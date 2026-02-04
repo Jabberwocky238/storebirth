@@ -1,7 +1,27 @@
 // API Client
 const API_BASE = window.location.origin;
 
-async function apiCall(endpoint, method = 'GET', data = null) {
+// RSA Signature helper
+async function signData(data, privateKeyPEM) {
+    const pemHeader = '-----BEGIN RSA PRIVATE KEY-----';
+    const pemFooter = '-----END RSA PRIVATE KEY-----';
+    const pemContents = privateKeyPEM.replace(pemHeader, '').replace(pemFooter, '').replace(/\s/g, '');
+    const binaryDer = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0));
+
+    const privateKey = await crypto.subtle.importKey(
+        'pkcs8',
+        binaryDer,
+        { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+        false,
+        ['sign']
+    );
+
+    const encoder = new TextEncoder();
+    const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, encoder.encode(data));
+    return btoa(String.fromCharCode(...new Uint8Array(signature)));
+}
+
+async function apiCall(endpoint, method = 'GET', data = null, requireSignature = false) {
     const options = {
         method,
         headers: {
@@ -13,8 +33,15 @@ async function apiCall(endpoint, method = 'GET', data = null) {
         options.headers['Authorization'] = `Bearer ${window.token}`;
     }
 
+    const bodyStr = data ? JSON.stringify(data) : '';
     if (data) {
-        options.body = JSON.stringify(data);
+        options.body = bodyStr;
+    }
+
+    // Add signature for sensitive operations
+    if (requireSignature && window.privateKey) {
+        const signature = await signData(bodyStr, window.privateKey);
+        options.headers['X-Combinator-Signature'] = signature;
     }
 
     const response = await fetch(API_BASE + endpoint, options);
@@ -49,11 +76,11 @@ const rdbAPI = {
     },
 
     async create(name, rdb_type, url) {
-        return apiCall('/api/rdb', 'POST', { name, rdb_type, url });
+        return apiCall('/api/rdb', 'POST', { name, rdb_type, url }, true);
     },
 
     async delete(id) {
-        return apiCall(`/api/rdb/${id}`, 'DELETE');
+        return apiCall(`/api/rdb/${id}`, 'DELETE', {}, true);
     }
 };
 
@@ -64,11 +91,11 @@ const kvAPI = {
     },
 
     async create(name, kv_type, url) {
-        return apiCall('/api/kv', 'POST', { name, kv_type, url });
+        return apiCall('/api/kv', 'POST', { name, kv_type, url }, true);
     },
 
     async delete(id) {
-        return apiCall(`/api/kv/${id}`, 'DELETE');
+        return apiCall(`/api/kv/${id}`, 'DELETE', {}, true);
     }
 };
 
@@ -83,11 +110,45 @@ const workerAPI = {
     },
 
     async register(worker_id, image, port) {
-        return apiCall('/api/worker', 'POST', { worker_id, image, port });
+        return apiCall('/api/worker', 'POST', { worker_id, image, port }, true);
     },
 
     async delete(id) {
-        return apiCall(`/api/worker/${id}`, 'DELETE');
+        return apiCall(`/api/worker/${id}`, 'DELETE', {}, true);
+    }
+};
+
+// Credential Storage
+const credentialStore = {
+    save(userId, token, privateKey) {
+        const data = { userId, token, privateKey };
+        localStorage.setItem('console_credentials', JSON.stringify(data));
+        window.currentUser = userId;
+        window.token = token;
+        window.privateKey = privateKey;
+    },
+
+    load() {
+        const stored = localStorage.getItem('console_credentials');
+        if (stored) {
+            try {
+                const data = JSON.parse(stored);
+                window.currentUser = data.userId;
+                window.token = data.token;
+                window.privateKey = data.privateKey;
+                return true;
+            } catch (e) {
+                return false;
+            }
+        }
+        return false;
+    },
+
+    clear() {
+        localStorage.removeItem('console_credentials');
+        window.currentUser = null;
+        window.token = null;
+        window.privateKey = null;
     }
 };
 
@@ -132,14 +193,21 @@ const commands = {
 
             const result = await authAPI.register(email, code, password);
 
-            window.currentUser = result.user_id;
-            window.token = result.token;
+            // Save credentials to localStorage
+            credentialStore.save(result.user_id, result.token, result.private_key);
             terminal.updatePrompt();
 
             terminal.print('', 'success');
             terminal.print('Registration successful!', 'success');
             terminal.print(`User ID: ${result.user_id}`, 'info');
             terminal.print(`Email: ${result.email}`, 'info');
+            terminal.print('');
+            terminal.print('Private key saved to localStorage', 'success');
+            terminal.print('');
+            terminal.print('=== IMPORTANT: Backup your private key ===', 'warning');
+            terminal.print('If you clear browser data, you will need this key!', 'warning');
+            terminal.print('');
+            terminal.print(result.private_key, 'info');
         } catch (error) {
             terminal.print(`Registration failed: ${error.message}`, 'error');
         }
@@ -152,8 +220,27 @@ const commands = {
 
             const result = await authAPI.login(email, password);
 
-            window.currentUser = result.user_id;
-            window.token = result.token;
+            // Check if we have stored private key for this user
+            const stored = localStorage.getItem('console_credentials');
+            let privateKey = null;
+
+            if (stored) {
+                try {
+                    const data = JSON.parse(stored);
+                    if (data.userId === result.user_id && data.privateKey) {
+                        privateKey = data.privateKey;
+                        terminal.print('Private key loaded from localStorage', 'info');
+                    }
+                } catch (e) {}
+            }
+
+            if (!privateKey) {
+                terminal.print('No stored private key found for this user', 'warning');
+                terminal.print('Enter your private key (paste full PEM, end with empty line):', 'info');
+                privateKey = await terminal.waitForMultilineInput();
+            }
+
+            credentialStore.save(result.user_id, result.token, privateKey);
             terminal.updatePrompt();
 
             terminal.print('', 'success');
@@ -165,10 +252,10 @@ const commands = {
     },
 
     logout(terminal) {
-        window.currentUser = null;
-        window.token = null;
+        credentialStore.clear();
         terminal.updatePrompt();
         terminal.print('Logged out successfully', 'success');
+        terminal.print('Credentials cleared from localStorage', 'info');
     },
 
     whoami(terminal) {

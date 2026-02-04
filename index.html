@@ -191,6 +191,26 @@
                         input.type = 'password';
                     }
                 });
+            },
+
+            waitForMultilineInput() {
+                return new Promise((resolve) => {
+                    const lines = [];
+                    awaitingInput = true;
+                    const collectLine = (line) => {
+                        if (line === '') {
+                            awaitingInput = false;
+                            inputCallback = null;
+                            resolve(lines.join('\n'));
+                        } else {
+                            lines.push(line);
+                            this.print(line.substring(0, 40) + '...', 'info');
+                            awaitingInput = true;
+                            inputCallback = collectLine;
+                        }
+                    };
+                    inputCallback = collectLine;
+                });
             }
         };
 
@@ -262,6 +282,13 @@
         terminal.print('Welcome to Console Terminal v1.0', 'info');
         terminal.print('Type "help" for available commands', 'info');
         terminal.print('');
+
+        // Load credentials from localStorage
+        if (credentialStore.load()) {
+            terminal.updatePrompt();
+            terminal.print(`Session restored for ${window.currentUser}`, 'success');
+            terminal.print('');
+        }
     </script>
 </body>
 </html>

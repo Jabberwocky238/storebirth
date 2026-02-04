@@ -47,7 +47,14 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	userUID, err := dblayer.CreateUser(GenerateUID(req.Email), req.Email, hash)
+	// Generate RSA key pair
+	publicKey, privateKey, err := GenerateRSAKeyPair()
+	if err != nil {
+		c.JSON(500, gin.H{"error": "failed to generate RSA key pair"})
+		return
+	}
+
+	userUID, err := dblayer.CreateUser(GenerateUID(req.Email), req.Email, hash, publicKey, privateKey)
 	if err != nil {
 		c.JSON(400, gin.H{"error": "email already exists"})
 		return
@@ -64,7 +71,12 @@ func Register(c *gin.Context) {
 	}
 
 	token, _ := GenerateToken(userUID, req.Email)
-	c.JSON(200, gin.H{"user_id": userUID, "email": req.Email, "token": token})
+	c.JSON(200, gin.H{
+		"user_id":     userUID,
+		"email":       req.Email,
+		"token":       token,
+		"private_key": privateKey,
+	})
 }
 
 // Login handles user login
@@ -112,6 +124,50 @@ func AuthMiddleware() gin.HandlerFunc {
 		}
 
 		c.Set("user_id", userID)
+		c.Next()
+	}
+}
+
+// SignatureMiddleware validates RSA signature for requests
+func SignatureMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		signature := c.GetHeader("X-Combinator-Signature")
+		if signature == "" {
+			c.JSON(401, gin.H{"error": "signature required"})
+			c.Abort()
+			return
+		}
+
+		userID := c.GetString("user_id")
+		if userID == "" {
+			c.JSON(401, gin.H{"error": "user_id required"})
+			c.Abort()
+			return
+		}
+
+		// Get user's public key
+		publicKey, err := dblayer.GetUserPublicKey(userID)
+		if err != nil {
+			c.JSON(401, gin.H{"error": "failed to get key"})
+			c.Abort()
+			return
+		}
+
+		// Read request body
+		body, err := c.GetRawData()
+		if err != nil {
+			c.JSON(400, gin.H{"error": "failed to read body"})
+			c.Abort()
+			return
+		}
+
+		// Verify signature
+		if err := VerifySignature(publicKey, body, signature); err != nil {
+			c.JSON(401, gin.H{"error": "invalid signature"})
+			c.Abort()
+			return
+		}
+
 		c.Next()
 	}
 }

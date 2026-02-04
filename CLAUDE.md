@@ -1,7 +1,7 @@
 项目结构
 
 console/
-├── cmd/main.go              # 入口文件
+├── cmd/main.go               # 入口文件
 ├── dblayer/                  # 数据库层
 │   ├── db.go                 # 数据库连接初始化
 │   ├── models.go             # 所有数据模型定义
@@ -9,7 +9,7 @@ console/
 ├── handlers/                 # HTTP 处理器
 │   ├── auth.handler.go       # 认证和资源管理 API
 │   ├── auth.utils.go         # 工具函数 (JWT, 密码等)
-│   ├── common.handler.go     # RDB/KV 资源管理
+│   ├── combinator.handler.go # RDB/KV 资源管理
 │   ├── worker.handler.go     # Worker 管理
 │   └── basic.handler.go      # 健康检查
 ├── k8s/                      # K8s 操作

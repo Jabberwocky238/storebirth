@@ -22,11 +22,11 @@ func MarkCodeUsed(codeID int) error {
 }
 
 // CreateUser 创建用户
-func CreateUser(uid, email, passwordHash string) (string, error) {
+func CreateUser(uid, email, passwordHash, publicKey, privateKey string) (string, error) {
 	var userUID string
 	err := DB.QueryRow(
-		"INSERT INTO users (uid, email, password_hash) VALUES ($1, $2, $3) RETURNING uid",
-		uid, email, passwordHash,
+		"INSERT INTO users (uid, email, password_hash, public_key, private_key) VALUES ($1, $2, $3, $4, $5) RETURNING uid",
+		uid, email, passwordHash, publicKey, privateKey,
 	).Scan(&userUID)
 	return userUID, err
 }
@@ -35,9 +35,9 @@ func CreateUser(uid, email, passwordHash string) (string, error) {
 func GetUserByEmail(email string) (*User, error) {
 	var user User
 	err := DB.QueryRow(
-		"SELECT uid, email, password_hash FROM users WHERE email = $1",
+		"SELECT uid, email, password_hash, public_key, private_key FROM users WHERE email = $1",
 		email,
-	).Scan(&user.UID, &user.Email, &user.PasswordHash)
+	).Scan(&user.UID, &user.Email, &user.PasswordHash, &user.PublicKey, &user.PrivateKey)
 	if err != nil {
 		return nil, err
 	}
@@ -60,6 +60,26 @@ func UpdateUserPassword(email, passwordHash string) error {
 		passwordHash, email,
 	)
 	return err
+}
+
+// GetUserPrivateKey 通过 UID 获取用户私钥
+func GetUserPrivateKey(uid string) (string, error) {
+	var privateKey string
+	err := DB.QueryRow(
+		"SELECT private_key FROM users WHERE uid = $1",
+		uid,
+	).Scan(&privateKey)
+	return privateKey, err
+}
+
+// GetUserPublicKey 通过 UID 获取用户公钥
+func GetUserPublicKey(uid string) (string, error) {
+	var publicKey string
+	err := DB.QueryRow(
+		"SELECT public_key FROM users WHERE uid = $1",
+		uid,
+	).Scan(&publicKey)
+	return publicKey, err
 }
 
 // ========== RDB Actions ==========
