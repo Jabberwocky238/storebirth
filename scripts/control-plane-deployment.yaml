@@ -6,35 +6,35 @@ metadata:
   name: console
 ---
 # PostgreSQL PersistentVolume (HostPath)
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: postgres-pv
-spec:
-  capacity:
-    storage: 10Gi
-  accessModes:
-    - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: manual
-  hostPath:
-    path: /home/ubuntu/control-plane-psql
-    type: DirectoryOrCreate
+# apiVersion: v1
+# kind: PersistentVolume
+# metadata:
+#   name: postgres-pv
+# spec:
+#   capacity:
+#     storage: 10Gi
+#   accessModes:
+#     - ReadWriteOnce
+#   persistentVolumeReclaimPolicy: Retain
+#   storageClassName: manual
+#   hostPath:
+#     path: /home/ubuntu/control-plane-psql
+#     type: DirectoryOrCreate
 
 ---
 # PostgreSQL PersistentVolumeClaim
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: postgres-pvc
-  namespace: console
-spec:
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: manual
-  resources:
-    requests:
-      storage: 10Gi
+# apiVersion: v1
+# kind: PersistentVolumeClaim
+# metadata:
+#   name: postgres-pvc
+#   namespace: console
+# spec:
+#   accessModes:
+#     - ReadWriteOnce
+#   storageClassName: manual
+#   resources:
+#     requests:
+#       storage: 10Gi
 
 ---
 apiVersion: v1
@@ -159,8 +159,9 @@ spec:
           mountPath: /docker-entrypoint-initdb.d
       volumes:
       - name: data
-        persistentVolumeClaim:
-          claimName: postgres-pvc
+        # persistentVolumeClaim:
+        #   claimName: postgres-pvc   
+        emptyDir: {} # Use emptyDir for simplicity; replace with PVC in production
       - name: init
         configMap:
           name: postgres-init
