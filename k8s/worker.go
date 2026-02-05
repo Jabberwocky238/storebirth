@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -24,73 +25,74 @@ func (w *Worker) Name() string {
 	return fmt.Sprintf("%s-%s", w.WorkerID, w.OwnerID)
 }
 
+func (w *Worker) Labels() map[string]string {
+	return map[string]string{
+		"app":       w.Name(),
+		"worker-id": w.WorkerID,
+		"owner-id":  w.OwnerID,
+	}
+}
+
 // DeployWorker deploys a worker to K8s
-func DeployWorker(worker *Worker) error {
+func (w *Worker) Deploy() error {
 	if K8sClient == nil {
 		return fmt.Errorf("k8s client not initialized")
 	}
 
 	ctx := context.Background()
-	name := worker.Name()
 
-	if err := deployWorkerDeployment(ctx, worker, name); err != nil {
+	if err := w.deployWorkerDeployment(ctx); err != nil {
 		return fmt.Errorf("deploy deployment failed: %w", err)
 	}
-	if err := deployWorkerService(ctx, worker, name); err != nil {
+	if err := w.deployWorkerService(ctx); err != nil {
 		return fmt.Errorf("deploy service failed: %w", err)
 	}
-	if err := deployWorkerExternalService(ctx, worker, name); err != nil {
+	if err := w.deployWorkerExternalService(ctx); err != nil {
 		return fmt.Errorf("deploy external service failed: %w", err)
 	}
-	if err := deployWorkerIngressRoute(ctx, worker, name); err != nil {
+	if err := w.deployWorkerIngressRoute(ctx); err != nil {
 		return fmt.Errorf("deploy ingress route failed: %w", err)
 	}
 	return nil
 }
 
 // DeleteWorker deletes a worker from K8s
-func DeleteWorker(worker *Worker) error {
+func (w *Worker) Delete() error {
 	if K8sClient == nil {
 		return fmt.Errorf("k8s client not initialized")
 	}
 
 	ctx := context.Background()
-	name := worker.Name()
+	name := w.Name()
 
 	K8sClient.AppsV1().Deployments(WorkerNamespace).Delete(ctx, name, metav1.DeleteOptions{})
 	K8sClient.CoreV1().Services(WorkerNamespace).Delete(ctx, name, metav1.DeleteOptions{})
 	K8sClient.CoreV1().Services(IngressNamespace).Delete(ctx, name, metav1.DeleteOptions{})
-	deleteWorkerIngressRoute(ctx, name)
+	w.deleteWorkerIngressRoute(ctx)
 	return nil
 }
 
-func deployWorkerDeployment(ctx context.Context, worker *Worker, name string) error {
+func (w *Worker) deployWorkerDeployment(ctx context.Context) error {
 	replicas := int32(1)
-	labels := map[string]string{
-		"app":       name,
-		"worker-id": worker.WorkerID,
-		"owner-id":  worker.OwnerID,
-	}
-
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
+			Name:      w.Name(),
 			Namespace: WorkerNamespace,
-			Labels:    labels,
+			Labels:    w.Labels(),
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{"app": name},
+				MatchLabels: map[string]string{"app": w.Name()},
 			},
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				ObjectMeta: metav1.ObjectMeta{Labels: w.Labels()},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{{
-						Name:  name,
-						Image: worker.Image,
+						Name:  w.Name(),
+						Image: w.Image,
 						Ports: []corev1.ContainerPort{{
-							ContainerPort: int32(worker.Port),
+							ContainerPort: int32(w.Port),
 						}},
 					}},
 				},
@@ -99,7 +101,7 @@ func deployWorkerDeployment(ctx context.Context, worker *Worker, name string) er
 	}
 
 	deploymentsClient := K8sClient.AppsV1().Deployments(WorkerNamespace)
-	_, err := deploymentsClient.Get(ctx, name, metav1.GetOptions{})
+	_, err := deploymentsClient.Get(ctx, w.Name(), metav1.GetOptions{})
 	if errors.IsNotFound(err) {
 		_, err = deploymentsClient.Create(ctx, deployment, metav1.CreateOptions{})
 	} else if err == nil {
@@ -108,49 +110,37 @@ func deployWorkerDeployment(ctx context.Context, worker *Worker, name string) er
 	return err
 }
 
-func deployWorkerService(ctx context.Context, worker *Worker, name string) error {
-	labels := map[string]string{
-		"app":       name,
-		"worker-id": worker.WorkerID,
-		"owner-id":  worker.OwnerID,
-	}
-
+func (w *Worker) deployWorkerService(ctx context.Context) error {
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
+			Name:      w.Name(),
 			Namespace: WorkerNamespace,
-			Labels:    labels,
+			Labels:    w.Labels(),
 		},
 		Spec: corev1.ServiceSpec{
-			Selector: map[string]string{"app": name},
+			Selector: map[string]string{"app": w.Name()},
 			Ports: []corev1.ServicePort{{
-				Port:     int32(worker.Port),
+				Port:     int32(w.Port),
 				Protocol: corev1.ProtocolTCP,
 			}},
 		},
 	}
 
 	servicesClient := K8sClient.CoreV1().Services(WorkerNamespace)
-	_, err := servicesClient.Get(ctx, name, metav1.GetOptions{})
+	_, err := servicesClient.Get(ctx, w.Name(), metav1.GetOptions{})
 	if errors.IsNotFound(err) {
 		_, err = servicesClient.Create(ctx, service, metav1.CreateOptions{})
 	}
 	return err
 }
 
-func deployWorkerExternalService(ctx context.Context, worker *Worker, name string) error {
-	labels := map[string]string{
-		"app":       name,
-		"worker-id": worker.WorkerID,
-		"owner-id":  worker.OwnerID,
-	}
-
-	externalName := fmt.Sprintf("%s.%s.svc.cluster.local", name, WorkerNamespace)
+func (w *Worker) deployWorkerExternalService(ctx context.Context) error {
+	externalName := fmt.Sprintf("%s.%s.svc.cluster.local", w.Name(), WorkerNamespace)
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
+			Name:      w.Name(),
 			Namespace: IngressNamespace,
-			Labels:    labels,
+			Labels:    w.Labels(),
 		},
 		Spec: corev1.ServiceSpec{
 			Type:         corev1.ServiceTypeExternalName,
@@ -159,30 +149,30 @@ func deployWorkerExternalService(ctx context.Context, worker *Worker, name strin
 	}
 
 	servicesClient := K8sClient.CoreV1().Services(IngressNamespace)
-	_, err := servicesClient.Get(ctx, name, metav1.GetOptions{})
+	_, err := servicesClient.Get(ctx, w.Name(), metav1.GetOptions{})
 	if errors.IsNotFound(err) {
 		_, err = servicesClient.Create(ctx, service, metav1.CreateOptions{})
 	}
 	return err
 }
 
-func deployWorkerIngressRoute(ctx context.Context, worker *Worker, name string) error {
+func (w *Worker) deployWorkerIngressRoute(ctx context.Context) error {
 	if DynamicClient == nil {
 		return fmt.Errorf("dynamic client not initialized")
 	}
 
-	host := fmt.Sprintf("%s.worker.%s", name, Domain)
+	host := fmt.Sprintf("%s.worker.%s", w.Name(), Domain)
 
 	ingressRoute := &unstructured.Unstructured{
 		Object: map[string]any{
 			"apiVersion": "traefik.io/v1alpha1",
 			"kind":       "IngressRoute",
 			"metadata": map[string]any{
-				"name":      name,
+				"name":      w.Name(),
 				"namespace": IngressNamespace,
 				"labels": map[string]any{
-					"worker-id": worker.WorkerID,
-					"owner-id":  worker.OwnerID,
+					"worker-id": w.WorkerID,
+					"owner-id":  w.OwnerID,
 				},
 			},
 			"spec": map[string]any{
@@ -193,8 +183,8 @@ func deployWorkerIngressRoute(ctx context.Context, worker *Worker, name string) 
 						"kind":  "Rule",
 						"services": []any{
 							map[string]any{
-								"name": name,
-								"port": worker.Port,
+								"name": w.Name(),
+								"port": w.Port,
 							},
 						},
 					},
@@ -207,7 +197,7 @@ func deployWorkerIngressRoute(ctx context.Context, worker *Worker, name string) 
 	}
 
 	client := DynamicClient.Resource(ingressRouteGVR).Namespace(IngressNamespace)
-	_, err := client.Get(ctx, name, metav1.GetOptions{})
+	_, err := client.Get(ctx, w.Name(), metav1.GetOptions{})
 	if errors.IsNotFound(err) {
 		_, err = client.Create(ctx, ingressRoute, metav1.CreateOptions{})
 	} else if err == nil {
@@ -216,10 +206,44 @@ func deployWorkerIngressRoute(ctx context.Context, worker *Worker, name string) 
 	return err
 }
 
-func deleteWorkerIngressRoute(ctx context.Context, name string) error {
+func (w *Worker) deleteWorkerIngressRoute(ctx context.Context) error {
 	if DynamicClient == nil {
 		return fmt.Errorf("dynamic client not initialized")
 	}
 	client := DynamicClient.Resource(ingressRouteGVR).Namespace(IngressNamespace)
-	return client.Delete(ctx, name, metav1.DeleteOptions{})
+	return client.Delete(ctx, w.Name(), metav1.DeleteOptions{})
+}
+
+// ListWorkers lists all workers, optionally filtered by labels
+func ListWorkers(workerId string, ownerId string) ([]Worker, error) {
+	if K8sClient == nil {
+		return nil, fmt.Errorf("k8s client not initialized")
+	}
+
+	ctx := context.Background()
+	opts := metav1.ListOptions{}
+
+	var selectors []string
+	if workerId != "" {
+		selectors = append(selectors, fmt.Sprintf("worker-id=%s", workerId))
+	}
+	if ownerId != "" {
+		selectors = append(selectors, fmt.Sprintf("owner-id=%s", ownerId))
+	}
+	opts.LabelSelector = strings.Join(selectors, ",")
+
+	deployments, err := K8sClient.AppsV1().Deployments(WorkerNamespace).List(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	var workers []Worker
+	for _, d := range deployments.Items {
+		workers = append(workers, Worker{
+			WorkerID: d.Labels["worker-id"],
+			OwnerID:  d.Labels["owner-id"],
+			Image:    d.Spec.Template.Spec.Containers[0].Image,
+		})
+	}
+	return workers, nil
 }

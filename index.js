@@ -75,8 +75,8 @@ const rdbAPI = {
         return apiCall('/api/rdb', 'GET');
     },
 
-    async create(name, rdb_type, url) {
-        return apiCall('/api/rdb', 'POST', { name, rdb_type, url }, true);
+    async create(rdb_type, url) {
+        return apiCall('/api/rdb', 'POST', { rdb_type, url }, true);
     },
 
     async delete(id) {
@@ -90,8 +90,8 @@ const kvAPI = {
         return apiCall('/api/kv', 'GET');
     },
 
-    async create(name, kv_type, url) {
-        return apiCall('/api/kv', 'POST', { name, kv_type, url }, true);
+    async create(kv_type, url) {
+        return apiCall('/api/kv', 'POST', { kv_type, url }, true);
     },
 
     async delete(id) {
@@ -381,11 +381,10 @@ const rdbCommands = {
 
     async add(terminal) {
         try {
-            const name = await terminal.waitForInput('Enter RDB name:');
             const type = await terminal.waitForInput('Enter RDB type (sqlite/postgres/mysql):');
             const url = await terminal.waitForInput('Enter RDB URL:');
 
-            const result = await rdbAPI.create(name, type, url);
+            const result = await rdbAPI.create(type, url);
 
             terminal.print('', 'success');
             terminal.print(`ID: ${result.id}`, 'info');
@@ -439,11 +438,10 @@ const kvCommands = {
 
     async add(terminal) {
         try {
-            const name = await terminal.waitForInput('Enter KV name:');
             const type = await terminal.waitForInput('Enter KV type (redis/memory):');
             const url = await terminal.waitForInput('Enter KV URL:');
 
-            const result = await kvAPI.create(name, type, url);
+            const result = await kvAPI.create(type, url);
 
             terminal.print('', 'success');
             terminal.print(`ID: ${result.id}`, 'info');

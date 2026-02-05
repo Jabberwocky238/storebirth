@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"jabberwocky238/console/dblayer"
 	"jabberwocky238/console/k8s"
 
 	"github.com/gin-gonic/gin"
@@ -21,12 +20,6 @@ func RegisterWorker(c *gin.Context) {
 		return
 	}
 
-	// Save to database
-	if err := dblayer.CreateWorker(req.WorkerID, userUID, req.Image, req.Port); err != nil {
-		c.JSON(500, gin.H{"error": "failed to create worker record"})
-		return
-	}
-
 	// Deploy to K8s
 	worker := &k8s.Worker{
 		WorkerID: req.WorkerID,
@@ -35,9 +28,8 @@ func RegisterWorker(c *gin.Context) {
 		Port:     req.Port,
 	}
 
-	if err := k8s.DeployWorker(worker); err != nil {
-		dblayer.SetWorkerStatus(req.WorkerID, userUID, "error", err.Error())
-		c.JSON(200, gin.H{
+	if err := worker.Deploy(); err != nil {
+		c.JSON(500, gin.H{
 			"worker_id": req.WorkerID,
 			"status":    "error",
 			"error":     err.Error(),
@@ -45,7 +37,6 @@ func RegisterWorker(c *gin.Context) {
 		return
 	}
 
-	dblayer.SetWorkerStatus(req.WorkerID, userUID, "active", "")
 	c.JSON(200, gin.H{
 		"worker_id": req.WorkerID,
 		"status":    "active",
@@ -58,29 +49,13 @@ func DeleteWorker(c *gin.Context) {
 	userUID := c.GetString("user_id")
 	workerID := c.Param("id")
 
-	// Get worker from database
-	dbWorker, err := dblayer.GetWorker(workerID, userUID)
-	if err != nil {
-		c.JSON(404, gin.H{"error": "worker not found"})
-		return
-	}
-
-	// Delete from K8s
 	worker := &k8s.Worker{
-		WorkerID: dbWorker.WorkerID,
-		OwnerID:  dbWorker.OwnerID,
-		Image:    dbWorker.Image,
-		Port:     dbWorker.Port,
+		WorkerID: workerID,
+		OwnerID:  userUID,
 	}
 
-	if err := k8s.DeleteWorker(worker); err != nil {
+	if err := worker.Delete(); err != nil {
 		c.JSON(500, gin.H{"error": "failed to delete worker from k8s"})
-		return
-	}
-
-	// Delete from database
-	if err := dblayer.DeleteWorker(workerID, userUID); err != nil {
-		c.JSON(500, gin.H{"error": "failed to delete worker record"})
 		return
 	}
 
@@ -91,7 +66,7 @@ func DeleteWorker(c *gin.Context) {
 func ListWorkers(c *gin.Context) {
 	userUID := c.GetString("user_id")
 
-	workers, err := dblayer.ListWorkersByOwner(userUID)
+	workers, err := k8s.ListWorkers("", userUID)
 	if err != nil {
 		c.JSON(500, gin.H{"error": "failed to list workers"})
 		return
@@ -105,11 +80,11 @@ func GetWorker(c *gin.Context) {
 	userUID := c.GetString("user_id")
 	workerID := c.Param("id")
 
-	worker, err := dblayer.GetWorker(workerID, userUID)
-	if err != nil {
+	workers, err := k8s.ListWorkers(workerID, userUID)
+	if err != nil || len(workers) == 0 {
 		c.JSON(404, gin.H{"error": "worker not found"})
 		return
 	}
 
-	c.JSON(200, worker)
+	c.JSON(200, workers[0])
 }

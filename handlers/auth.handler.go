@@ -63,8 +63,14 @@ func Register(c *gin.Context) {
 		dblayer.MarkCodeUsed(codeID)
 	}
 
+	combinator := k8s.Combinator{
+		UserUID: userUID,
+		RDBs:    []k8s.RDBItem{},
+		KVs:     []k8s.KVItem{},
+	}
+
 	// Create K8s pod for user
-	if err := k8s.CreateCombinatorPod(userUID); err != nil {
+	if err := combinator.Deploy(); err != nil {
 		log.Printf("Warning: Failed to create pod for user %s: %v", userUID, err)
 	}
 
