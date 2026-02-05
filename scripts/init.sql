@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
     uid VARCHAR(64) UNIQUE NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
-    secret_key VARCHAR(64) NOT NULL,
+    secret_key VARCHAR(256) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

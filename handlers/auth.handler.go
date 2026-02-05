@@ -30,7 +30,7 @@ func Register(c *gin.Context) {
 	if req.Code != SPECIAL_CODE {
 		id, expiresAt, err := dblayer.GetVerificationCode(req.Email, req.Code)
 		if err != nil {
-			c.JSON(400, gin.H{"error": "invalid code"})
+			c.JSON(400, gin.H{"error": "invalid code: " + err.Error()})
 			return
 		}
 		codeID = id
@@ -43,7 +43,7 @@ func Register(c *gin.Context) {
 
 	hash, err := HashPassword(req.Password)
 	if err != nil {
-		c.JSON(500, gin.H{"error": "failed to hash password"})
+		c.JSON(500, gin.H{"error": "failed to hash password: " + err.Error()})
 		return
 	}
 
@@ -52,7 +52,7 @@ func Register(c *gin.Context) {
 
 	userUID, err := dblayer.CreateUser(GenerateUID(req.Email), req.Email, hash, secretKey)
 	if err != nil {
-		c.JSON(400, gin.H{"error": "email already exists"})
+		c.JSON(400, gin.H{"error": "email already exists: " + err.Error()})
 		return
 	}
 
