@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"bytes"
+	"io"
 	"log"
 	"strings"
 	"time"
@@ -163,6 +165,9 @@ func SignatureMiddleware() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+
+		// Restore body for next handler
+		c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
 
 		// Verify signature: HMAC(body + timestamp)
 		payload := append(body, []byte(timestamp)...)
