@@ -21,12 +21,7 @@ func main() {
 	flag.Parse()
 
 	// Check DOMAIN environment variable (required for IngressRoute creation)
-	domain := os.Getenv("DOMAIN")
-	if domain == "" {
-		log.Fatal("DOMAIN environment variable is required")
-	}
-	log.Printf("Using domain: %s", domain)
-	k8s.Domain = domain
+	checkEnv()
 
 	// Initialize database
 	if err := dblayer.InitDB(*dbDSN); err != nil {
@@ -104,4 +99,13 @@ func main() {
 	// Start server
 	log.Printf("Server listening on %s", *listen)
 	r.Run(*listen)
+}
+
+func checkEnv() {
+	domain := os.Getenv("DOMAIN")
+	if domain == "" {
+		panic("DOMAIN environment variable is required")
+	}
+	log.Printf("Using domain: %s", domain)
+	k8s.Domain = domain
 }

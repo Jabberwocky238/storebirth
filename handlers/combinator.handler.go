@@ -42,8 +42,29 @@ func ListRDBs(c *gin.Context) {
 		return
 	}
 
-	rdbs := combinator.RDBs
-	c.JSON(200, gin.H{"rdbs": rdbs})
+	userRDB := k8s.UserRDB{UserUID: userUID}
+
+	dbSize, _ := userRDB.DatabaseSize()
+
+	type rdbWithSize struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+		URL  string `json:"url"`
+		Size int64  `json:"size"`
+	}
+
+	items := make([]rdbWithSize, 0, len(combinator.RDBs))
+	for _, rdb := range combinator.RDBs {
+		size, _ := userRDB.SchemaSize(rdb.ID)
+		items = append(items, rdbWithSize{
+			ID:   rdb.ID,
+			Name: rdb.Name,
+			URL:  rdb.URL,
+			Size: size,
+		})
+	}
+
+	c.JSON(200, gin.H{"rdbs": items, "database_size": dbSize})
 }
 
 // CreateKV creates a new KV resource

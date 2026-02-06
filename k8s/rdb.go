@@ -177,3 +177,37 @@ func DeleteUserRDB(userUID string) error {
 	db.Exec(fmt.Sprintf("DROP USER IF EXISTS %s", r.Username()))
 	return nil
 }
+
+// DatabaseSize returns the total size of user's database in bytes
+func (r *UserRDB) DatabaseSize() (int64, error) {
+	db, err := r.getDB()
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+
+	var size int64
+	err = db.QueryRow(
+		`SELECT COALESCE(SUM(range_size_mb), 0) * 1024 * 1024
+		 FROM crdb_internal.ranges
+		 WHERE database_name = $1`, r.Database()).Scan(&size)
+	return size, err
+}
+
+// SchemaSize returns the total size of a specific schema in bytes
+func (r *UserRDB) SchemaSize(schemaID string) (int64, error) {
+	db, err := r.getDB()
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+
+	schName := fmt.Sprintf("schema_%s", sanitize(schemaID))
+	var size int64
+	err = db.QueryRow(
+		`SELECT COALESCE(SUM(crdb_internal.table_span_stats.total_bytes), 0)
+		 FROM crdb_internal.table_span_stats
+		 JOIN crdb_internal.tables ON tables.table_id = table_span_stats.table_id
+		 WHERE tables.schema_name = $1`, schName).Scan(&size)
+	return size, err
+}

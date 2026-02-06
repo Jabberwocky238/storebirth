@@ -9,6 +9,13 @@ function requireAuth(terminal: TerminalAPI): boolean {
   return true;
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${units[i]}`;
+}
+
 // === RDB Commands ===
 
 async function rdbList(terminal: TerminalAPI) {
@@ -16,11 +23,16 @@ async function rdbList(terminal: TerminalAPI) {
     const result = await rdbAPI.list();
     terminal.print('');
     terminal.print('=== RDB Resources ===', 'info');
+    if (result.database_size !== undefined) {
+      terminal.print(`Database Total: ${formatBytes(result.database_size)}`, 'info');
+    }
+    terminal.print('');
     if (result.rdbs && result.rdbs.length > 0) {
-      result.rdbs.forEach((rdb: { id: string; rdb_type: string; url: string }) => {
+      result.rdbs.forEach((rdb: { id: string; name: string; url: string; size: number }) => {
         terminal.print(`ID: ${rdb.id}`, 'success');
-        terminal.print(`  Type: ${rdb.rdb_type}`);
+        terminal.print(`  Name: ${rdb.name}`);
         terminal.print(`  URL: ${rdb.url}`);
+        terminal.print(`  Size: ${formatBytes(rdb.size)}`);
         terminal.print('');
       });
     } else {
