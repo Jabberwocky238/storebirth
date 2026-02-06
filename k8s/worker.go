@@ -33,7 +33,7 @@ func (w *Worker) Labels() map[string]string {
 	}
 }
 
-// DeployWorker deploys a worker to K8s
+// Deploy creates or updates all 4 K8s resources for this worker.
 func (w *Worker) Deploy() error {
 	if K8sClient == nil {
 		return fmt.Errorf("k8s client not initialized")

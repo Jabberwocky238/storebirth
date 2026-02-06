@@ -144,10 +144,10 @@ async function workerList(terminal: TerminalAPI) {
     terminal.print('');
     terminal.print('=== Workers ===', 'info');
     if (result && result.length > 0) {
-      result.forEach((w: { worker_id: string; image: string; port: number }) => {
+      result.forEach((w: { worker_id: string; worker_name: string; active_version_id: number | null }) => {
         terminal.print(`ID: ${w.worker_id}`, 'success');
-        terminal.print(`  Image: ${w.image}`);
-        terminal.print(`  Port: ${w.port}`);
+        terminal.print(`  Name: ${w.worker_name}`);
+        terminal.print(`  Active Version: ${w.active_version_id ?? 'none'}`);
         terminal.print('');
       });
     } else {
@@ -160,21 +160,43 @@ async function workerList(terminal: TerminalAPI) {
 
 async function workerAdd(terminal: TerminalAPI) {
   try {
-    const worker_id = await terminal.waitForInput('Enter worker ID:');
-    const image = await terminal.waitForInput('Enter Docker image:');
-    const port = await terminal.waitForInput('Enter port:');
-    const result = await workerAPI.register(worker_id, image, parseInt(port));
+    const name = await terminal.waitForInput('Enter worker name:');
+    const result = await workerAPI.create(name);
     terminal.print('', 'success');
     terminal.print(`Worker ID: ${result.worker_id}`, 'info');
-    terminal.print(`Status: ${result.status}`, result.status === 'active' ? 'success' : 'warning');
-    if (result.domain) {
-      terminal.print(`Domain: ${result.domain}`, 'info');
-    }
-    if (result.error) {
-      terminal.print(`Error: ${result.error}`, 'error');
-    }
+    terminal.print(`Name: ${result.worker_name}`, 'info');
   } catch (error) {
     terminal.print(`Failed to create worker: ${(error as Error).message}`, 'error');
+  }
+}
+
+async function workerGet(terminal: TerminalAPI, id: string) {
+  try {
+    const result = await workerAPI.get(id);
+    const w = result.worker;
+    terminal.print('');
+    terminal.print(`=== Worker: ${w.worker_name} ===`, 'info');
+    terminal.print(`  ID: ${w.worker_id}`);
+    terminal.print(`  Active Version: ${w.active_version_id ?? 'none'}`);
+    terminal.print('');
+    if (result.versions && result.versions.length > 0) {
+      terminal.print('--- Deploy Versions ---', 'info');
+      result.versions.forEach((v: { id: number; image: string; port: number; status: string; msg: string; created_at: string }) => {
+        const statusClass = v.status === 'success' ? 'success' : v.status === 'error' ? 'error' : 'warning';
+        const active = w.active_version_id === v.id ? ' [active]' : '';
+        terminal.print(`  #${v.id}${active}`, statusClass);
+        terminal.print(`    Image: ${v.image}`);
+        terminal.print(`    Port: ${v.port}`);
+        terminal.print(`    Status: ${v.status}`);
+        if (v.msg) terminal.print(`    Msg: ${v.msg}`);
+        terminal.print(`    Created: ${v.created_at}`);
+        terminal.print('');
+      });
+    } else {
+      terminal.print('No deploy versions found', 'warning');
+    }
+  } catch (error) {
+    terminal.print(`Failed to get worker: ${(error as Error).message}`, 'error');
   }
 }
 
@@ -192,10 +214,13 @@ export async function workerCommand(terminal: TerminalAPI, args: string[]) {
   switch (args[0]) {
     case 'list': await workerList(terminal); break;
     case 'add': await workerAdd(terminal); break;
+    case 'get':
+      if (!args[1]) { terminal.print('Usage: worker get <id>', 'error'); return; }
+      await workerGet(terminal, args[1]); break;
     case 'delete':
       if (!args[1]) { terminal.print('Usage: worker delete <id>', 'error'); return; }
       await workerDelete(terminal, args[1]); break;
-    default: terminal.print('Usage: worker [list|add|delete]', 'error');
+    default: terminal.print('Usage: worker [list|add|get|delete]', 'error');
   }
 }
 

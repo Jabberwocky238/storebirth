@@ -2,13 +2,12 @@ package main
 
 import (
 	"flag"
-	"log"
-	"os"
-	"path"
-
 	"jabberwocky238/console/dblayer"
 	"jabberwocky238/console/handlers"
 	"jabberwocky238/console/k8s"
+	"log"
+	"os"
+	"path"
 
 	"github.com/gin-gonic/gin"
 )
@@ -36,6 +35,10 @@ func main() {
 	} else {
 		log.Println("K8s client initialized")
 	}
+
+	// Start worker handler (deploy queue + periodic reconcile)
+	wh := handlers.NewWorkerHandler()
+	wh.Start()
 
 	// Start periodic domain check
 	k8s.StartPeriodicCheck()
@@ -66,8 +69,10 @@ func main() {
 	{
 		api.GET("/rdb", handlers.ListRDBs)
 		api.GET("/kv", handlers.ListKVs)
-		api.GET("/worker", handlers.ListWorkers)
-		api.GET("/worker/:id", handlers.GetWorker)
+		api.GET("/worker", wh.ListWorkers)
+		api.GET("/worker/:id", wh.GetWorker)
+		api.POST("/worker", wh.CreateWorker)
+		api.DELETE("/worker/:id", wh.DeleteWorker)
 		api.POST("/rdb", handlers.CreateRDB)
 		api.DELETE("/rdb/:id", handlers.DeleteRDB)
 		api.POST("/kv", handlers.CreateKV)
@@ -82,8 +87,7 @@ func main() {
 	sensitive := r.Group("/api")
 	sensitive.Use(handlers.SignatureMiddleware())
 	{
-		sensitive.POST("/worker", handlers.RegisterWorker)
-		sensitive.DELETE("/worker/:id", handlers.DeleteWorker)
+		sensitive.POST("/worker/deploy", wh.DeployWorker)
 	}
 
 	// Fallback: serve static files from dist/ or index.html for SPA

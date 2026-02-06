@@ -32,6 +32,37 @@ CREATE TABLE IF NOT EXISTS custom_domains (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Workers table
+CREATE TABLE IF NOT EXISTS workers (
+    id SERIAL PRIMARY KEY,
+    user_uid VARCHAR(64) NOT NULL,
+    worker_id VARCHAR(16) UNIQUE NOT NULL,
+    worker_name VARCHAR(255) NOT NULL,
+    active_version_id INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_workers_user_uid ON workers(user_uid);
+CREATE INDEX IF NOT EXISTS idx_workers_worker_id ON workers(worker_id);
+
+-- Worker deploy versions table
+CREATE TABLE IF NOT EXISTS worker_deploy_versions (
+    id SERIAL PRIMARY KEY,
+    worker_id VARCHAR(16) NOT NULL REFERENCES workers(worker_id) ON DELETE CASCADE,
+    image VARCHAR(512) NOT NULL,
+    port INTEGER NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'loading',
+    msg TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_wdv_worker_id ON worker_deploy_versions(worker_id);
+
+ALTER TABLE workers
+    ADD CONSTRAINT fk_workers_active_version
+    FOREIGN KEY (active_version_id) REFERENCES worker_deploy_versions(id)
+    ON DELETE SET NULL;
+
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_verification_codes_email ON verification_codes(email);
 CREATE INDEX IF NOT EXISTS idx_custom_domains_user_id ON custom_domains(user_id);

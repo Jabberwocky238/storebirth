@@ -32,3 +32,24 @@ type CustomDomain struct {
 	Status    string    `json:"status"` // pending, success, error
 	CreatedAt time.Time `json:"created_at"`
 }
+
+// Worker model
+type Worker struct {
+	ID              int    `json:"-"`
+	UserUID         string `json:"user_uid"`
+	WorkerID        string `json:"worker_id"`
+	WorkerName      string `json:"worker_name"`
+	ActiveVersionID *int   `json:"active_version_id"`
+	CreatedAt       time.Time `json:"created_at"`
+}
+
+// WorkerDeployVersion model
+type WorkerDeployVersion struct {
+	ID        int       `json:"id"`
+	WorkerID  string    `json:"worker_id"`
+	Image     string    `json:"image"`
+	Port      int       `json:"port"`
+	Status    string    `json:"status"` // loading, success, error
+	Msg       string    `json:"msg"`
+	CreatedAt time.Time `json:"created_at"`
+}

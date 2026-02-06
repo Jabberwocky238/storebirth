@@ -3,7 +3,8 @@
     "allow": [
       "Bash(go build:*)",
       "Bash(dir /b \"D:\\\\1-code\\\\__trash__\\\\storebirth\\\\distributer\\\\scripts\")",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(go get:*)"
     ]
   }
 }

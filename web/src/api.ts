@@ -89,9 +89,9 @@ export const kvAPI = {
 
 export const workerAPI = {
   list: () => apiCall('/api/worker', 'GET'),
-  get: (id: string) => apiCall(`/api/worker/${id}`, 'GET'),
-  register: (worker_id: string, image: string, port: number) => apiCall('/api/worker', 'POST', { worker_id, image, port }, true),
-  delete: (id: string) => apiCall(`/api/worker/${id}`, 'DELETE', {}, true),
+  get: (id: string, offset?: number) => apiCall(`/api/worker/${id}${offset ? `?offset=${offset}` : ''}`, 'GET'),
+  create: (worker_name: string) => apiCall('/api/worker', 'POST', { worker_name }),
+  delete: (id: string) => apiCall(`/api/worker/${id}`, 'DELETE'),
 };
 
 export const domainAPI = {

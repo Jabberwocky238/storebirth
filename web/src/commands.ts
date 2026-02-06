@@ -23,7 +23,8 @@ export function helpCommand(terminal: TerminalAPI) {
   terminal.print('  kv delete <id>          - Delete a KV resource');
   terminal.print('');
   terminal.print('  worker list             - List all workers');
-  terminal.print('  worker add              - Add a new worker');
+  terminal.print('  worker add              - Create a new worker');
+  terminal.print('  worker get <id>         - Get worker details & versions');
   terminal.print('  worker delete <id>      - Delete a worker');
   terminal.print('');
   terminal.print('  domain list             - List all custom domains');
