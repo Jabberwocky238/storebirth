@@ -22,17 +22,14 @@ CREATE TABLE IF NOT EXISTS verification_codes (
 
 -- Custom domains table
 CREATE TABLE IF NOT EXISTS custom_domains (
-    id SERIAL PRIMARY KEY,
-    uid VARCHAR(64) UNIQUE NOT NULL,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    domain VARCHAR(255) NOT NULL,
-    target_type VARCHAR(16) NOT NULL,  -- 'worker' or 's3'
-    target_id VARCHAR(64) NOT NULL,
-    verify_token VARCHAR(64) NOT NULL,
-    verified BOOLEAN DEFAULT false,
-    last_check_at TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(domain)
+    id VARCHAR(16) PRIMARY KEY,
+    user_uid VARCHAR(64) NOT NULL,
+    domain VARCHAR(255) UNIQUE NOT NULL,
+    target VARCHAR(255) NOT NULL,
+    txt_name VARCHAR(255) NOT NULL,
+    txt_value VARCHAR(255) NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);

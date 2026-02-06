@@ -71,3 +71,89 @@ func GetUserSecretKey(uid string) (string, error) {
 	).Scan(&secretKey)
 	return secretKey, err
 }
+
+// ========== CustomDomain Actions ==========
+
+// CreateCustomDomain 创建自定义域名
+func CreateCustomDomain(id, userUID, domain, target, txtName, txtValue, status string) error {
+	_, err := DB.Exec(
+		`INSERT INTO custom_domains (id, user_uid, domain, target, txt_name, txt_value, status)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		id, userUID, domain, target, txtName, txtValue, status,
+	)
+	return err
+}
+
+// GetCustomDomain 获取自定义域名
+func GetCustomDomain(id string) (*CustomDomain, error) {
+	var cd CustomDomain
+	err := DB.QueryRow(
+		`SELECT id, user_uid, domain, target, txt_name, txt_value, status, created_at
+		 FROM custom_domains WHERE id = $1`,
+		id,
+	).Scan(&cd.ID, &cd.UserUID, &cd.Domain, &cd.Target, &cd.TXTName, &cd.TXTValue, &cd.Status, &cd.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &cd, nil
+}
+
+// ListCustomDomains 获取用户的所有自定义域名
+func ListCustomDomains(userUID string) ([]*CustomDomain, error) {
+	rows, err := DB.Query(
+		`SELECT id, user_uid, domain, target, txt_name, txt_value, status, created_at
+		 FROM custom_domains WHERE user_uid = $1`,
+		userUID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var domains []*CustomDomain
+	for rows.Next() {
+		var cd CustomDomain
+		if err := rows.Scan(&cd.ID, &cd.UserUID, &cd.Domain, &cd.Target, &cd.TXTName, &cd.TXTValue, &cd.Status, &cd.CreatedAt); err != nil {
+			return nil, err
+		}
+		domains = append(domains, &cd)
+	}
+	return domains, nil
+}
+
+// UpdateCustomDomainStatus 更新自定义域名状态
+func UpdateCustomDomainStatus(id, status string) error {
+	_, err := DB.Exec(
+		`UPDATE custom_domains SET status = $1 WHERE id = $2`,
+		status, id,
+	)
+	return err
+}
+
+// DeleteCustomDomain 删除自定义域名
+func DeleteCustomDomain(id string) error {
+	_, err := DB.Exec(`DELETE FROM custom_domains WHERE id = $1`, id)
+	return err
+}
+
+// ListAllSuccessDomains 获取所有成功状态的域名（用于定期检查）
+func ListAllSuccessDomains() ([]*CustomDomain, error) {
+	rows, err := DB.Query(
+		`SELECT id, user_uid, domain, target, txt_name, txt_value, status, created_at
+		 FROM custom_domains WHERE status = 'success'`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var domains []*CustomDomain
+	for rows.Next() {
+		var cd CustomDomain
+		if err := rows.Scan(&cd.ID, &cd.UserUID, &cd.Domain, &cd.Target, &cd.TXTName, &cd.TXTValue, &cd.Status, &cd.CreatedAt); err != nil {
+			return nil, err
+		}
+		domains = append(domains, &cd)
+	}
+	return domains, nil
+}

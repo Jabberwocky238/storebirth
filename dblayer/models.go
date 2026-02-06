@@ -20,3 +20,15 @@ type VerificationCode struct {
 	ExpiresAt time.Time `json:"expires_at"`
 	Used      bool      `json:"used"`
 }
+
+// CustomDomain model
+type CustomDomain struct {
+	ID        string    `json:"id"`
+	UserUID   string    `json:"user_uid"`
+	Domain    string    `json:"domain"`
+	Target    string    `json:"target"`
+	TXTName   string    `json:"txt_name"`
+	TXTValue  string    `json:"txt_value"`
+	Status    string    `json:"status"` // pending, success, error
+	CreatedAt time.Time `json:"created_at"`
+}

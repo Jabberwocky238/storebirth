@@ -1,42 +1,83 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+#terminal {
+  height: 100vh;
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+#output {
+  flex: 1;
+  overflow-y: auto;
+  margin-bottom: 10px;
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+.line {
+  margin: 2px 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
+.prompt {
+  color: #00ff00;
 }
 
-.card {
-  padding: 2em;
+.error {
+  color: #ff0000;
 }
 
-.read-the-docs {
-  color: #888;
+.success {
+  color: #00ff00;
+}
+
+.info {
+  color: #00aaff;
+}
+
+.warning {
+  color: #ffaa00;
+}
+
+#input-line {
+  display: flex;
+  align-items: center;
+}
+
+#prompt-symbol {
+  color: #00ff00;
+  margin-right: 5px;
+  white-space: nowrap;
+}
+
+#input {
+  background: transparent;
+  border: none;
+  color: #00ff00;
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  outline: none;
+  flex: 1;
+  caret-color: #00ff00;
+}
+
+.ascii-art {
+  color: #00aaff;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0c0c0c;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #00ff00;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #00aa00;
 }

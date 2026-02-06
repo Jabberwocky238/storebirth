@@ -1,16 +1,19 @@
-# Build stage
+# Frontend build stage
+FROM oven/bun:latest AS frontend
+
+WORKDIR /app/web
+COPY web/package.json web/bun.lock ./
+RUN bun install --frozen-lockfile
+COPY web/ .
+RUN bun run build
+
+# Backend build stage
 FROM golang:1.25-alpine AS builder
 
 WORKDIR /app
-
-# Copy go mod files
 COPY go.mod go.sum ./
 RUN go mod download
-
-# Copy source code
 COPY . .
-
-# Build
 RUN CGO_ENABLED=0 GOOS=linux go build -o control-plane ./cmd
 
 # Runtime stage
@@ -22,8 +25,7 @@ WORKDIR /app
 
 COPY --from=builder /app/control-plane .
 COPY --from=builder /app/scripts/init.sql ./scripts/
-COPY --from=builder /app/index.html .
-COPY --from=builder /app/index.js .
+COPY --from=frontend /app/web/dist ./dist/
 
 EXPOSE 9900
 

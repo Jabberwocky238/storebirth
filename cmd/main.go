@@ -4,6 +4,7 @@ import (
 	"flag"
 	"log"
 	"os"
+	"path"
 
 	"jabberwocky238/console/dblayer"
 	"jabberwocky238/console/handlers"
@@ -41,6 +42,9 @@ func main() {
 		log.Println("K8s client initialized")
 	}
 
+	// Start periodic domain check
+	k8s.StartPeriodicCheck()
+
 	log.Println("Control plane starting...")
 
 	// Setup Gin router
@@ -49,9 +53,11 @@ func main() {
 	// Health check endpoint
 	r.GET("/health", handlers.Health)
 
-	// Serve static files
-	r.StaticFile("/", "./index.html")
-	r.StaticFile("/index.js", "./index.js")
+	// Serve frontend static files from dist/
+	r.Static("/assets", "./dist/assets")
+	r.GET("/", func(c *gin.Context) {
+		c.File("./dist/index.html")
+	})
 
 	// Public routes
 	r.POST("/auth/register", handlers.Register)
@@ -71,6 +77,10 @@ func main() {
 		api.DELETE("/rdb/:id", handlers.DeleteRDB)
 		api.POST("/kv", handlers.CreateKV)
 		api.DELETE("/kv/:id", handlers.DeleteKV)
+		api.GET("/domain", handlers.ListCustomDomains)
+		api.GET("/domain/:id", handlers.GetCustomDomain)
+		api.POST("/domain", handlers.AddCustomDomain)
+		api.DELETE("/domain/:id", handlers.DeleteCustomDomain)
 	}
 
 	// Sensitive routes (signature required)
@@ -80,6 +90,16 @@ func main() {
 		sensitive.POST("/worker", handlers.RegisterWorker)
 		sensitive.DELETE("/worker/:id", handlers.DeleteWorker)
 	}
+
+	// Fallback: serve static files from dist/ or index.html for SPA
+	r.NoRoute(func(c *gin.Context) {
+		filePath := path.Join("./dist", c.Request.URL.Path)
+		if _, err := os.Stat(filePath); err == nil {
+			c.File(filePath)
+			return
+		}
+		c.File("./dist/index.html")
+	})
 
 	// Start server
 	log.Printf("Server listening on %s", *listen)
