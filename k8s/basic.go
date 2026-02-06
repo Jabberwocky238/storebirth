@@ -24,6 +24,12 @@ var ingressRouteGVR = schema.GroupVersionResource{
 	Resource: "ingressroutes",
 }
 
+var certificateGVR = schema.GroupVersionResource{
+	Group:    "cert-manager.io",
+	Version:  "v1",
+	Resource: "certificates",
+}
+
 // InitK8s initializes Kubernetes client
 func InitK8s(kubeconfig string) error {
 	var config *rest.Config

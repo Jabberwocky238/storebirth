@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { TerminalLine, TerminalAPI } from './types';
+import type { TerminalLine, TerminalAPI } from './types';
 import { getPromptPrefix, credentialStore } from './store';
 import {
   helpCommand, registerCommand, loginCommand,
@@ -22,7 +22,7 @@ export default function Terminal() {
   const [lines, setLines] = useState<TerminalLine[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isPassword, setIsPassword] = useState(false);
-  const [commandHistory, setCommandHistory] = useState<string[]>([]);
+  const [_commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [promptPrefix, setPromptPrefix] = useState('guest@console:~$');
 

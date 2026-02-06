@@ -1,14 +1,6 @@
-import { TerminalAPI } from './types';
-import { authAPI, rdbAPI, kvAPI, workerAPI, domainAPI, getAuthState } from './api';
+import type { TerminalAPI } from './types';
+import { authAPI, getAuthState } from './api';
 import { credentialStore } from './store';
-
-function requireAuth(terminal: TerminalAPI): boolean {
-  if (!getAuthState().token) {
-    terminal.print('Please login first', 'error');
-    return false;
-  }
-  return true;
-}
 
 export function helpCommand(terminal: TerminalAPI) {
   terminal.print('');

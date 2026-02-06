@@ -103,6 +103,7 @@ func (cd *CustomDomain) CreateIngressRoute() error {
 
 	ctx := context.Background()
 	name := fmt.Sprintf("custom-domain-%s", cd.ID)
+	tlsSecretName := fmt.Sprintf("custom-domain-tls-%s", cd.ID)
 
 	// Create ExternalName Service pointing to target domain
 	svc := &corev1.Service{
@@ -121,6 +122,33 @@ func (cd *CustomDomain) CreateIngressRoute() error {
 	}
 	if _, err := K8sClient.CoreV1().Services(IngressNamespace).Create(ctx, svc, metav1.CreateOptions{}); err != nil {
 		return fmt.Errorf("create service failed: %w", err)
+	}
+
+	// Create cert-manager Certificate for the custom domain
+	cert := &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": "cert-manager.io/v1",
+			"kind":       "Certificate",
+			"metadata": map[string]any{
+				"name":      name,
+				"namespace": IngressNamespace,
+				"labels": map[string]any{
+					"app":      "custom-domain",
+					"user-uid": cd.UserUID,
+				},
+			},
+			"spec": map[string]any{
+				"secretName": tlsSecretName,
+				"dnsNames":   []any{cd.Domain},
+				"issuerRef": map[string]any{
+					"name": "cert-issuer",
+					"kind": "ClusterIssuer",
+				},
+			},
+		},
+	}
+	if _, err := DynamicClient.Resource(certificateGVR).Namespace(IngressNamespace).Create(ctx, cert, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("create certificate failed: %w", err)
 	}
 
 	// Create IngressRoute
@@ -151,7 +179,7 @@ func (cd *CustomDomain) CreateIngressRoute() error {
 					},
 				},
 				"tls": map[string]any{
-					"secretName": "ingress-tls",
+					"secretName": tlsSecretName,
 				},
 			},
 		},
@@ -221,6 +249,12 @@ func DeleteCustomDomain(id string) error {
 	if DynamicClient != nil {
 		DynamicClient.Resource(ingressRouteGVR).Namespace(IngressNamespace).Delete(ctx, name, metav1.DeleteOptions{})
 	}
+
+	// Delete Certificate
+	if DynamicClient != nil {
+		DynamicClient.Resource(certificateGVR).Namespace(IngressNamespace).Delete(ctx, name, metav1.DeleteOptions{})
+	}
+
 	return nil
 }
 
