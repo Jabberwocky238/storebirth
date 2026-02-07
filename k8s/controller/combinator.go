@@ -138,9 +138,6 @@ func (c *Combinator) EnsureDeployment(ctx context.Context) error {
 
 func (c *Combinator) buildPodSpec() corev1.PodSpec {
 	return corev1.PodSpec{
-		NodeSelector: map[string]string{
-			"project": "combinator-affinitive",
-		},
 		Containers: []corev1.Container{{
 			Name:            "combinator",
 			Image:           "ghcr.io/jabberwocky238/combinator:latest",

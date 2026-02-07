@@ -107,7 +107,7 @@ spec:
       accessModes: ["ReadWriteOnce"]
       resources:
         requests:
-          storage: 10Gi
+          storage: 100Gi
 ---
 # 初始化 Job (只需要在集群创建时运行一次)
 apiVersion: batch/v1

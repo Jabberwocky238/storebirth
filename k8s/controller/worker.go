@@ -71,6 +71,18 @@ func (w *Worker) EnsureDeployment(ctx context.Context) error {
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: w.Labels()},
 				Spec: corev1.PodSpec{
+					Affinity: &corev1.Affinity{
+						PodAffinity: &corev1.PodAffinity{
+							RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{{
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"app": fmt.Sprintf("combinator-%s", w.OwnerID),
+									},
+								},
+								TopologyKey: "kubernetes.io/hostname",
+							}},
+						},
+					},
 					Containers: []corev1.Container{{
 						Name:  w.Name(),
 						Image: w.Image,
