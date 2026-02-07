@@ -33,12 +33,16 @@ func (wc *WorkerController) onAdd(obj interface{}) {
 }
 
 func (wc *WorkerController) onUpdate(oldObj, newObj interface{}) {
-	u, ok := newObj.(*unstructured.Unstructured)
-	if !ok {
+	oldU, ok1 := oldObj.(*unstructured.Unstructured)
+	newU, ok2 := newObj.(*unstructured.Unstructured)
+	if !ok1 || !ok2 {
 		return
 	}
-	log.Printf("[controller] WorkerApp updated: %s", u.GetName())
-	wc.reconcile(u)
+	if oldU.GetGeneration() == newU.GetGeneration() {
+		return // status-only update, skip reconcile
+	}
+	log.Printf("[controller] WorkerApp updated: %s", newU.GetName())
+	wc.reconcile(newU)
 }
 
 func (wc *WorkerController) onDelete(obj interface{}) {

@@ -111,16 +111,22 @@ func (c *Controller) Start(stopCh <-chan struct{}) {
 }
 
 func (c *Controller) updateStatus(u *unstructured.Unstructured, gvr schema.GroupVersionResource, phase, message string) {
-	patch := u.DeepCopy()
-	if patch.Object["status"] == nil {
-		patch.Object["status"] = map[string]interface{}{}
+	client := c.client.Resource(gvr).Namespace(u.GetNamespace())
+
+	latest, err := client.Get(context.Background(), u.GetName(), metav1.GetOptions{})
+	if err != nil {
+		log.Printf("[controller] get latest %s for status update failed: %v", u.GetName(), err)
+		return
 	}
-	status := patch.Object["status"].(map[string]interface{})
+
+	if latest.Object["status"] == nil {
+		latest.Object["status"] = map[string]interface{}{}
+	}
+	status := latest.Object["status"].(map[string]interface{})
 	status["phase"] = phase
 	status["message"] = message
 
-	client := c.client.Resource(gvr).Namespace(u.GetNamespace())
-	_, err := client.UpdateStatus(context.Background(), patch, metav1.UpdateOptions{})
+	_, err = client.UpdateStatus(context.Background(), latest, metav1.UpdateOptions{})
 	if err != nil {
 		log.Printf("[controller] update status for %s failed: %v", u.GetName(), err)
 	}
