@@ -79,6 +79,7 @@ func (w *Worker) EnsureDeployment(ctx context.Context) error {
 										"app": fmt.Sprintf("combinator-%s", w.OwnerID),
 									},
 								},
+								Namespaces:  []string{k8s.CombinatorNamespace},
 								TopologyKey: "kubernetes.io/hostname",
 							}},
 						},
