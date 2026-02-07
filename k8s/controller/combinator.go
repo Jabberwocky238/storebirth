@@ -138,6 +138,22 @@ func (c *Combinator) EnsureDeployment(ctx context.Context) error {
 
 func (c *Combinator) buildPodSpec() corev1.PodSpec {
 	return corev1.PodSpec{
+		Affinity: &corev1.Affinity{
+			PodAffinity: &corev1.PodAffinity{
+				PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{{
+					Weight: 100,
+					PodAffinityTerm: corev1.PodAffinityTerm{
+						LabelSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								"app": "cockroachdb",
+							},
+						},
+						Namespaces:  []string{k8s.RDBNamespace},
+						TopologyKey: "kubernetes.io/hostname",
+					},
+				}},
+			},
+		},
 		Containers: []corev1.Container{{
 			Name:            "combinator",
 			Image:           "ghcr.io/jabberwocky238/combinator:latest",

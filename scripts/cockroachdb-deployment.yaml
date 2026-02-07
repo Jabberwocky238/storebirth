@@ -31,6 +31,7 @@ metadata:
   namespace: cockroachdb
 spec:
   type: ClusterIP
+  internalTrafficPolicy: Local
   selector:
     app: cockroachdb
   ports:

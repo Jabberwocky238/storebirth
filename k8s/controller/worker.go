@@ -73,14 +73,17 @@ func (w *Worker) EnsureDeployment(ctx context.Context) error {
 				Spec: corev1.PodSpec{
 					Affinity: &corev1.Affinity{
 						PodAffinity: &corev1.PodAffinity{
-							RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{{
-								LabelSelector: &metav1.LabelSelector{
-									MatchLabels: map[string]string{
-										"app": fmt.Sprintf("combinator-%s", w.OwnerID),
+							PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{{
+								Weight: 100,
+								PodAffinityTerm: corev1.PodAffinityTerm{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"app": fmt.Sprintf("combinator-%s", w.OwnerID),
+										},
 									},
+									Namespaces:  []string{k8s.CombinatorNamespace},
+									TopologyKey: "kubernetes.io/hostname",
 								},
-								Namespaces:  []string{k8s.CombinatorNamespace},
-								TopologyKey: "kubernetes.io/hostname",
 							}},
 						},
 					},
