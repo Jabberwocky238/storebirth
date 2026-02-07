@@ -1,6 +1,6 @@
-import type { TerminalAPI } from './types';
-import { authAPI, getAuthState } from './api';
-import { credentialStore } from './store';
+import type { TerminalAPI } from '../types';
+import { authAPI, getAuthState } from '../api';
+import { credentialStore } from '../store';
 
 export function helpCommand(terminal: TerminalAPI) {
   terminal.print('');
@@ -13,6 +13,7 @@ export function helpCommand(terminal: TerminalAPI) {
   terminal.print('  logout                  - Logout from your account');
   terminal.print('  whoami                  - Show current user');
   terminal.print('  status                  - Show current status');
+  terminal.print('  gui                     - Switch to GUI mode');
   terminal.print('');
   terminal.print('  rdb list                - List all RDB resources');
   terminal.print('  rdb add                 - Add a new RDB resource');

@@ -58,17 +58,6 @@ type: Opaque
 stringData:
   root-password: "change-me-in-production-iamthedestiny"
 ---
-# ConfigMap for init scripts (user management)
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: cockroachdb-init
-  namespace: cockroachdb
-data:
-  init.sql: |
-    -- 控制平面通过 root 用户动态管理
-    SELECT 1;
----
 # PodDisruptionBudget for high availability
 apiVersion: policy/v1
 kind: PodDisruptionBudget

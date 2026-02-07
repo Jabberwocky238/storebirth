@@ -15,12 +15,15 @@ import (
 func main() {
 	// Parse flags
 	listen := flag.String("l", "localhost:9900", "Listen address")
-	dbDSN := flag.String("d", "", "Database DSN")
+	dbDSN := flag.String("d", "postgresql://myuser:your_password@localhost:5432/mydb?sslmode=disable", "Database DSN")
 	kubeconfig := flag.String("k", "", "Kubeconfig path (empty for in-cluster)")
 	flag.Parse()
 
 	// Check DOMAIN environment variable (required for IngressRoute creation)
-	checkEnv()
+	// 检查是否为测试环境
+	if os.Getenv("ENV") != "test" {
+		checkEnv()
+	}
 
 	// Initialize database
 	if err := dblayer.InitDB(*dbDSN); err != nil {
@@ -47,7 +50,9 @@ func main() {
 
 	// Setup Gin router
 	r := gin.Default()
-
+	if os.Getenv("ENV") == "test" {
+		r.Use(crossOriginMiddleware())
+	}
 	// Health check endpoint
 	r.GET("/health", handlers.Health)
 
@@ -57,26 +62,29 @@ func main() {
 		c.File("./dist/index.html")
 	})
 
+	api := r.Group("/api")
 	// Public routes
-	r.POST("/auth/register", handlers.Register)
-	r.POST("/auth/login", handlers.Login)
-	r.POST("/auth/send-code", handlers.SendCode)
-	r.POST("/auth/reset-password", handlers.ResetPassword)
+	api.POST("/auth/register", handlers.Register)
+	api.POST("/auth/login", handlers.Login)
+	api.POST("/auth/send-code", handlers.SendCode)
+	api.POST("/auth/reset-password", handlers.ResetPassword)
 
 	// Protected routes
-	api := r.Group("/api")
 	api.Use(handlers.AuthMiddleware())
 	{
 		api.GET("/rdb", handlers.ListRDBs)
+		api.POST("/rdb", handlers.CreateRDB)
+		api.DELETE("/rdb/:id", handlers.DeleteRDB)
+
 		api.GET("/kv", handlers.ListKVs)
+		api.POST("/kv", handlers.CreateKV)
+		api.DELETE("/kv/:id", handlers.DeleteKV)
+
 		api.GET("/worker", wh.ListWorkers)
 		api.GET("/worker/:id", wh.GetWorker)
 		api.POST("/worker", wh.CreateWorker)
 		api.DELETE("/worker/:id", wh.DeleteWorker)
-		api.POST("/rdb", handlers.CreateRDB)
-		api.DELETE("/rdb/:id", handlers.DeleteRDB)
-		api.POST("/kv", handlers.CreateKV)
-		api.DELETE("/kv/:id", handlers.DeleteKV)
+
 		api.GET("/domain", handlers.ListCustomDomains)
 		api.GET("/domain/:id", handlers.GetCustomDomain)
 		api.POST("/domain", handlers.AddCustomDomain)
@@ -112,4 +120,17 @@ func checkEnv() {
 	}
 	log.Printf("Using domain: %s", domain)
 	k8s.Domain = domain
+}
+
+func crossOriginMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization")
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+		c.Next()
+	}
 }

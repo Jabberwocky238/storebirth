@@ -1,4 +1,4 @@
-const API_BASE = window.location.origin;
+const API_BASE = window.location.origin.includes("localhost") ? "http://localhost:9900" : window.location.origin;
 
 async function signData(data: string, secretKey: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -70,9 +70,9 @@ async function apiCall(endpoint: string, method = 'GET', data: unknown = null, r
 }
 
 export const authAPI = {
-  sendCode: (email: string) => apiCall('/auth/send-code', 'POST', { email }),
-  register: (email: string, code: string, password: string) => apiCall('/auth/register', 'POST', { email, code, password }),
-  login: (email: string, password: string) => apiCall('/auth/login', 'POST', { email, password }),
+  sendCode: (email: string) => apiCall('/api/auth/send-code', 'POST', { email }),
+  register: (email: string, code: string, password: string) => apiCall('/api/auth/register', 'POST', { email, code, password }),
+  login: (email: string, password: string) => apiCall('/api/auth/login', 'POST', { email, password }),
 };
 
 export const rdbAPI = {

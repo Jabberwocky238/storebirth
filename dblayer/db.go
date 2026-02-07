@@ -2,6 +2,7 @@ package dblayer
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 
 	_ "github.com/lib/pq"
@@ -14,7 +15,7 @@ func InitDB(dsn string) error {
 	var err error
 	DB, err = sql.Open("postgres", dsn)
 	if err != nil {
-		return err
+		return fmt.Errorf("Connection err: %s", err.Error())
 	}
 
 	if err := DB.Ping(); err != nil {

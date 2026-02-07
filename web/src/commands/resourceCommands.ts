@@ -1,5 +1,5 @@
-import type { TerminalAPI } from './types';
-import { rdbAPI, kvAPI, workerAPI, domainAPI, getAuthState } from './api';
+import type { TerminalAPI } from '../types';
+import { rdbAPI, kvAPI, workerAPI, domainAPI, getAuthState } from '../api';
 
 function requireAuth(terminal: TerminalAPI): boolean {
   if (!getAuthState().token) {

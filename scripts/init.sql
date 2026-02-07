@@ -57,13 +57,7 @@ CREATE TABLE IF NOT EXISTS worker_deploy_versions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_wdv_worker_id ON worker_deploy_versions(worker_id);
-
-ALTER TABLE workers
-    ADD CONSTRAINT fk_workers_active_version
-    FOREIGN KEY (active_version_id) REFERENCES worker_deploy_versions(id)
-    ON DELETE SET NULL;
-
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_verification_codes_email ON verification_codes(email);
-CREATE INDEX IF NOT EXISTS idx_custom_domains_user_id ON custom_domains(user_id);
+CREATE INDEX IF NOT EXISTS idx_custom_domains_user_uid ON custom_domains(user_uid);
 CREATE INDEX IF NOT EXISTS idx_custom_domains_domain ON custom_domains(domain);

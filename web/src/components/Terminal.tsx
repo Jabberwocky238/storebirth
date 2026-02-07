@@ -1,11 +1,12 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import type { TerminalLine, TerminalAPI } from './types';
-import { getPromptPrefix, credentialStore } from './store';
+import type { TerminalLine, TerminalAPI } from '../types';
+import { getPromptPrefix, credentialStore } from '../store';
+import { useMode } from '../context/ModeContext';
 import {
   helpCommand, registerCommand, loginCommand,
   logoutCommand, whoamiCommand, statusCommand,
-} from './commands';
-import { rdbCommand, kvCommand, workerCommand, domainCommand } from './resourceCommands';
+} from '../commands/commands';
+import { rdbCommand, kvCommand, workerCommand, domainCommand } from '../commands/resourceCommands';
 
 let lineIdCounter = 0;
 
@@ -19,6 +20,7 @@ const ASCII_ART = `
 `;
 
 export default function Terminal() {
+  const { setMode } = useMode();
   const [lines, setLines] = useState<TerminalLine[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isPassword, setIsPassword] = useState(false);
@@ -101,6 +103,7 @@ export default function Terminal() {
       kv: (t, a) => kvCommand(t, a),
       worker: (t, a) => workerCommand(t, a),
       domain: (t, a) => domainCommand(t, a),
+      gui: (t) => { t.print('Switching to GUI mode...', 'info'); setMode('gui'); },
     };
 
     if (commandMap[command]) {
