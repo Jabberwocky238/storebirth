@@ -3,7 +3,6 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"strconv"
 
 	"jabberwocky238/console/dblayer"
@@ -18,31 +17,12 @@ func workerURL(workerID, userUID string) string {
 	return fmt.Sprintf("https://%s.worker.%s", controller.WorkerName(workerID, userUID), k8s.Domain)
 }
 
-type workerTask struct {
-	kind      string // "deploy", "sync_env", "sync_secret", "delete_cr"
-	versionID int
-	workerID  string
-	userUID   string
-	data      map[string]string
-}
-
 type WorkerHandler struct {
-	queue chan workerTask
+	proc *k8s.Processor
 }
 
-func NewWorkerHandler() *WorkerHandler {
-	return &WorkerHandler{
-		queue: make(chan workerTask, 100),
-	}
-}
-
-func (h *WorkerHandler) Start() {
-	go func() {
-		for task := range h.queue {
-			h.process(task)
-		}
-	}()
-	log.Println("[worker-handler] started")
+func NewWorkerHandler(proc *k8s.Processor) *WorkerHandler {
+	return &WorkerHandler{proc: proc}
 }
 
 // CreateWorker 创建 worker 记录
@@ -76,7 +56,7 @@ func (h *WorkerHandler) DeleteWorker(c *gin.Context) {
 	workerID := c.Param("id")
 
 	// 异步删 CR（可能不存在）
-	h.queue <- workerTask{kind: "delete_cr", workerID: workerID, userUID: userUID}
+	h.proc.Submit(&DeleteWorkerCRJob{WorkerID: workerID, UserUID: userUID})
 
 	// 单次操作：验证归属 + 删除
 	if err := dblayer.DeleteWorkerByOwner(workerID, userUID); err != nil {
@@ -170,7 +150,7 @@ func (h *WorkerHandler) DeployWorker(c *gin.Context) {
 		return
 	}
 
-	h.queue <- workerTask{kind: "deploy", versionID: versionID}
+	h.proc.Submit(&DeployWorkerJob{VersionID: versionID, WorkerID: req.WorkerID, UserUID: req.UserUID})
 
 	c.JSON(200, gin.H{
 		"worker_id":  req.WorkerID,
@@ -236,7 +216,7 @@ func (h *WorkerHandler) SetWorkerEnv(c *gin.Context) {
 		return
 	}
 
-	h.queue <- workerTask{kind: "sync_env", workerID: workerID, userUID: userUID, data: envMap}
+	h.proc.Submit(&SyncEnvJob{WorkerID: workerID, UserUID: userUID, Data: envMap})
 
 	c.JSON(200, envMap)
 }
@@ -311,10 +291,10 @@ func (h *WorkerHandler) SetWorkerSecrets(c *gin.Context) {
 		return
 	}
 
-	h.queue <- workerTask{
-		kind: "sync_secret", workerID: workerID, userUID: userUID,
-		data: map[string]string{req.Key: req.Value},
-	}
+	h.proc.Submit(&SyncSecretJob{
+		WorkerID: workerID, UserUID: userUID,
+		Data: map[string]string{req.Key: req.Value},
+	})
 
 	c.JSON(200, keys)
 }

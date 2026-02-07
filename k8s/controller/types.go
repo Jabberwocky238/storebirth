@@ -5,16 +5,24 @@ import (
 )
 
 const (
-	Group          = "console.app238.com"
-	Version        = "v1"
-	WorkerResource = "workerapps"
-	WorkerKind     = "WorkerApp"
+	Group              = "console.app238.com"
+	Version            = "v1"
+	WorkerResource     = "workerapps"
+	WorkerKind         = "WorkerApp"
+	CombinatorResource = "combinatorapps"
+	CombinatorKind     = "CombinatorApp"
 )
 
 var WorkerAppGVR = schema.GroupVersionResource{
 	Group:    Group,
 	Version:  Version,
 	Resource: WorkerResource,
+}
+
+var CombinatorAppGVR = schema.GroupVersionResource{
+	Group:    Group,
+	Version:  Version,
+	Resource: CombinatorResource,
 }
 
 type WorkerAppSpec struct {
@@ -25,6 +33,16 @@ type WorkerAppSpec struct {
 }
 
 type WorkerAppStatus struct {
+	Phase   string `json:"phase"`
+	Message string `json:"message"`
+}
+
+type CombinatorAppSpec struct {
+	OwnerID string `json:"ownerID"`
+	Config  string `json:"config"`
+}
+
+type CombinatorAppStatus struct {
 	Phase   string `json:"phase"`
 	Message string `json:"message"`
 }

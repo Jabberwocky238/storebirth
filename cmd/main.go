@@ -40,9 +40,12 @@ func main() {
 	} else {
 		log.Println("K8s client initialized")
 
-		// Ensure WorkerApp CRD exists
+		// Ensure CRDs exist
 		if err := controller.EnsureCRD(k8s.RestConfig); err != nil {
-			log.Printf("Warning: CRD ensure failed: %v", err)
+			log.Printf("Warning: WorkerApp CRD ensure failed: %v", err)
+		}
+		if err := controller.EnsureCombinatorCRD(k8s.RestConfig); err != nil {
+			log.Printf("Warning: CombinatorApp CRD ensure failed: %v", err)
 		}
 
 		// Start WorkerApp controller (informer)
@@ -52,11 +55,13 @@ func main() {
 		go ctrl.Start(stopCh)
 	}
 
-	// Start worker handler (deploy queue + periodic reconcile)
-	wh := handlers.NewWorkerHandler()
-	wh.Start()
-	ah := handlers.NewAuthHandler()
-	ah.Start()
+	// Start shared job processor
+	proc := k8s.NewProcessor(256, 4)
+	proc.Start()
+
+	wh := handlers.NewWorkerHandler(proc)
+	ah := handlers.NewAuthHandler(proc)
+	ch := handlers.NewCombinatorHandler(proc)
 
 	// Start periodic domain check
 	k8s.StartPeriodicCheck()
@@ -87,13 +92,13 @@ func main() {
 	// Protected routes
 	api.Use(handlers.AuthMiddleware())
 	{
-		api.GET("/rdb", handlers.ListRDBs)
-		api.POST("/rdb", handlers.CreateRDB)
-		api.DELETE("/rdb/:id", handlers.DeleteRDB)
+		api.GET("/rdb", ch.ListRDBs)
+		api.POST("/rdb", ch.CreateRDB)
+		api.DELETE("/rdb/:id", ch.DeleteRDB)
 
-		api.GET("/kv", handlers.ListKVs)
-		api.POST("/kv", handlers.CreateKV)
-		api.DELETE("/kv/:id", handlers.DeleteKV)
+		api.GET("/kv", ch.ListKVs)
+		api.POST("/kv", ch.CreateKV)
+		api.DELETE("/kv/:id", ch.DeleteKV)
 
 		api.GET("/worker", wh.ListWorkers)
 		api.GET("/worker/:id", wh.GetWorker)

@@ -19,40 +19,11 @@ var RESEND_API_KEY string
 var ResendClient *resend.Client
 
 type AuthHandler struct {
-	queue chan string
+	proc *k8s.Processor
 }
 
-func NewAuthHandler() *AuthHandler {
-	return &AuthHandler{
-		queue: make(chan string, 100),
-	}
-}
-
-func (h *AuthHandler) Start() {
-	go func() {
-		for task := range h.queue {
-			h.register(task)
-		}
-	}()
-	log.Println("[auth-handler] started")
-}
-
-func (h *AuthHandler) register(userUID string) {
-	// Initialize user's RDB (CockroachDB database and user)
-	if _, err := k8s.InitUserRDB(userUID); err != nil {
-		log.Printf("Warning: Failed to init RDB for user %s: %v", userUID, err)
-	}
-
-	combinator := k8s.Combinator{
-		UserUID: userUID,
-		RDBs:    []k8s.RDBItem{},
-		KVs:     []k8s.KVItem{},
-	}
-
-	// Create K8s pod for user
-	if err := combinator.Deploy(); err != nil {
-		log.Printf("Warning: Failed to create pod for user %s: %v", userUID, err)
-	}
+func NewAuthHandler(proc *k8s.Processor) *AuthHandler {
+	return &AuthHandler{proc: proc}
 }
 
 // Register handles user registration
@@ -104,7 +75,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	// Enqueue userUID for post-registration setup
-	h.queue <- userUID
+	h.proc.Submit(&RegisterUserJob{UserUID: userUID})
 
 	token, _ := GenerateToken(userUID, req.Email)
 	c.JSON(200, gin.H{

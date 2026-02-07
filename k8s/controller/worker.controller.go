@@ -13,96 +13,35 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/dynamic/dynamicinformer"
-	"k8s.io/client-go/informers"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 )
 
-type WorkerAppController struct {
-	client    dynamic.Interface
-	k8sClient *kubernetes.Clientset
-	crCache   cache.Store
-}
-
-func NewController(client dynamic.Interface, k8sClient *kubernetes.Clientset) *WorkerAppController {
-	return &WorkerAppController{client: client, k8sClient: k8sClient}
-}
-
-func (c *WorkerAppController) Start(stopCh <-chan struct{}) {
-	// 1. CR informer: watch WorkerApp in worker namespace
-	dynFactory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(
-		c.client, 30*time.Second, k8s.WorkerNamespace, nil,
-	)
-	crInformer := dynFactory.ForResource(WorkerAppGVR).Informer()
-	c.crCache = crInformer.GetStore()
-
-	crInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    c.onAdd,
-		UpdateFunc: c.onUpdate,
-		DeleteFunc: c.onDelete,
-	})
-
-	// 2. Sub-resource informer: Deployment + Service + ConfigMap + Secret in worker namespace
-	k8sFactory := informers.NewSharedInformerFactoryWithOptions(
-		c.k8sClient, 30*time.Second,
-		informers.WithNamespace(k8s.WorkerNamespace),
-	)
-	subHandler := cache.ResourceEventHandlerFuncs{
-		DeleteFunc: c.onSubResourceDelete,
-	}
-	k8sFactory.Apps().V1().Deployments().Informer().AddEventHandler(subHandler)
-	k8sFactory.Core().V1().Services().Informer().AddEventHandler(subHandler)
-
-	// Watch ConfigMap and Secret updates to trigger Deployment rolling restart
-	configHandler := cache.ResourceEventHandlerFuncs{
-		UpdateFunc: c.onConfigUpdate,
-	}
-	k8sFactory.Core().V1().ConfigMaps().Informer().AddEventHandler(configHandler)
-	k8sFactory.Core().V1().Secrets().Informer().AddEventHandler(configHandler)
-
-	// 3. IngressRoute informer: watch IngressRoute in ingress namespace
-	ingressDynFactory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(
-		c.client, 30*time.Second, k8s.IngressNamespace, nil,
-	)
-	irInformer := ingressDynFactory.ForResource(k8s.IngressRouteGVR).Informer()
-	irInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		DeleteFunc: c.onSubResourceDelete,
-	})
-
-	log.Println("[controller] starting informers")
-	go dynFactory.Start(stopCh)
-	go k8sFactory.Start(stopCh)
-	go ingressDynFactory.Start(stopCh)
-
-	if !cache.WaitForCacheSync(stopCh, crInformer.HasSynced) {
-		log.Println("[controller] failed to sync CR informer cache")
-		return
-	}
-	log.Println("[controller] informer cache synced")
+type WorkerController struct {
+	ctrl    *Controller
+	crCache cache.Store
 }
 
 // --- CR event handlers ---
 
-func (c *WorkerAppController) onAdd(obj interface{}) {
+func (wc *WorkerController) onAdd(obj interface{}) {
 	u, ok := obj.(*unstructured.Unstructured)
 	if !ok {
 		return
 	}
 	log.Printf("[controller] WorkerApp added: %s", u.GetName())
-	c.reconcile(u)
+	wc.reconcile(u)
 }
 
-func (c *WorkerAppController) onUpdate(oldObj, newObj interface{}) {
+func (wc *WorkerController) onUpdate(oldObj, newObj interface{}) {
 	u, ok := newObj.(*unstructured.Unstructured)
 	if !ok {
 		return
 	}
 	log.Printf("[controller] WorkerApp updated: %s", u.GetName())
-	c.reconcile(u)
+	wc.reconcile(u)
 }
 
-func (c *WorkerAppController) onDelete(obj interface{}) {
+func (wc *WorkerController) onDelete(obj interface{}) {
 	u, ok := obj.(*unstructured.Unstructured)
 	if !ok {
 		return
@@ -118,8 +57,7 @@ func (c *WorkerAppController) onDelete(obj interface{}) {
 
 // --- Sub-resource delete handler ---
 
-func (c *WorkerAppController) onSubResourceDelete(obj interface{}) {
-	// Extract "app" label from the deleted sub-resource
+func (wc *WorkerController) onSubResourceDelete(obj interface{}) {
 	var appName string
 	switch o := obj.(type) {
 	case metav1.Object:
@@ -133,9 +71,8 @@ func (c *WorkerAppController) onSubResourceDelete(obj interface{}) {
 		return
 	}
 
-	// Find the parent CR in cache
 	key := k8s.WorkerNamespace + "/" + appName
-	item, exists, err := c.crCache.GetByKey(key)
+	item, exists, err := wc.crCache.GetByKey(key)
 	if err != nil || !exists {
 		return
 	}
@@ -144,18 +81,17 @@ func (c *WorkerAppController) onSubResourceDelete(obj interface{}) {
 		return
 	}
 	log.Printf("[controller] sub-resource deleted for %s, re-reconciling", appName)
-	c.reconcile(u)
+	wc.reconcile(u)
 }
 
 // --- ConfigMap / Secret update handler ---
 
-func (c *WorkerAppController) onConfigUpdate(oldObj, newObj interface{}) {
+func (wc *WorkerController) onConfigUpdate(oldObj, newObj interface{}) {
 	old, ok1 := oldObj.(metav1.Object)
 	cur, ok2 := newObj.(metav1.Object)
 	if !ok1 || !ok2 {
 		return
 	}
-	// Skip if resourceVersion unchanged (re-list, not a real update)
 	if old.GetResourceVersion() == cur.GetResourceVersion() {
 		return
 	}
@@ -164,10 +100,10 @@ func (c *WorkerAppController) onConfigUpdate(oldObj, newObj interface{}) {
 		return
 	}
 	log.Printf("[controller] config/secret updated for %s, restarting deployment", appName)
-	c.restartDeployment(appName)
+	wc.restartDeployment(appName)
 }
 
-func (c *WorkerAppController) restartDeployment(name string) {
+func (wc *WorkerController) restartDeployment(name string) {
 	if k8s.K8sClient == nil {
 		return
 	}
@@ -184,61 +120,45 @@ func (c *WorkerAppController) restartDeployment(name string) {
 	}
 }
 
-// --- Reconcile: ensure all 5 sub-resources exist ---
+// --- Reconcile ---
 
-func (c *WorkerAppController) reconcile(u *unstructured.Unstructured) {
+func (wc *WorkerController) reconcile(u *unstructured.Unstructured) {
 	w := workerFromUnstructured(u)
 	if w == nil {
 		return
 	}
 
 	ctx := context.Background()
-	c.updateStatus(u, "Deploying", "")
+	wc.ctrl.updateStatus(u, WorkerAppGVR, "Deploying", "")
 
 	if err := w.EnsureConfigMap(ctx); err != nil {
 		log.Printf("[controller] ensure configmap for %s failed: %v", u.GetName(), err)
-		c.updateStatus(u, "Failed", err.Error())
+		wc.ctrl.updateStatus(u, WorkerAppGVR, "Failed", err.Error())
 		return
 	}
 	if err := w.EnsureSecret(ctx); err != nil {
 		log.Printf("[controller] ensure secret for %s failed: %v", u.GetName(), err)
-		c.updateStatus(u, "Failed", err.Error())
+		wc.ctrl.updateStatus(u, WorkerAppGVR, "Failed", err.Error())
 		return
 	}
 	if err := w.EnsureDeployment(ctx); err != nil {
 		log.Printf("[controller] ensure deployment for %s failed: %v", u.GetName(), err)
-		c.updateStatus(u, "Failed", err.Error())
+		wc.ctrl.updateStatus(u, WorkerAppGVR, "Failed", err.Error())
 		return
 	}
 	if err := w.EnsureService(ctx); err != nil {
 		log.Printf("[controller] ensure service for %s failed: %v", u.GetName(), err)
-		c.updateStatus(u, "Failed", err.Error())
+		wc.ctrl.updateStatus(u, WorkerAppGVR, "Failed", err.Error())
 		return
 	}
 	if err := w.EnsureIngressRoute(ctx); err != nil {
 		log.Printf("[controller] ensure ingress route for %s failed: %v", u.GetName(), err)
-		c.updateStatus(u, "Failed", err.Error())
+		wc.ctrl.updateStatus(u, WorkerAppGVR, "Failed", err.Error())
 		return
 	}
 
 	log.Printf("[controller] reconcile %s success", u.GetName())
-	c.updateStatus(u, "Running", "")
-}
-
-func (c *WorkerAppController) updateStatus(u *unstructured.Unstructured, phase, message string) {
-	patch := u.DeepCopy()
-	if patch.Object["status"] == nil {
-		patch.Object["status"] = map[string]interface{}{}
-	}
-	status := patch.Object["status"].(map[string]interface{})
-	status["phase"] = phase
-	status["message"] = message
-
-	client := c.client.Resource(WorkerAppGVR).Namespace(u.GetNamespace())
-	_, err := client.UpdateStatus(context.Background(), patch, metav1.UpdateOptions{})
-	if err != nil {
-		log.Printf("[controller] update status for %s failed: %v", u.GetName(), err)
-	}
+	wc.ctrl.updateStatus(u, WorkerAppGVR, "Running", "")
 }
 
 // --- Helpers ---
