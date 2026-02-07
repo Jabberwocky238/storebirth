@@ -48,7 +48,9 @@ func (w *Worker) SecretName() string {
 	return fmt.Sprintf("%s-secret", w.Name())
 }
 
-// EnsureDeployment checks and creates/updates the Deployment if missing or outdated.
+func (w *Worker) CombinatorEndpoint() string {
+	return fmt.Sprintf("http://combinator-%s.%s.svc.cluster.local:8899", w.OwnerID, k8s.CombinatorNamespace)
+}
 func (w *Worker) EnsureDeployment(ctx context.Context) error {
 	if k8s.K8sClient == nil {
 		return fmt.Errorf("k8s client not initialized")
@@ -75,7 +77,10 @@ func (w *Worker) EnsureDeployment(ctx context.Context) error {
 						Ports: []corev1.ContainerPort{{
 							ContainerPort: int32(w.Port),
 						}},
-						EnvFrom: []corev1.EnvFromSource{
+						Env: []corev1.EnvVar{
+						{Name: "COMBINATOR_API_ENDPOINT", Value: w.CombinatorEndpoint()},
+					},
+					EnvFrom: []corev1.EnvFromSource{
 							{
 								ConfigMapRef: &corev1.ConfigMapEnvSource{
 									LocalObjectReference: corev1.LocalObjectReference{Name: w.EnvConfigMapName()},
