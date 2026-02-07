@@ -3,7 +3,6 @@ package k8s
 import (
 	"database/sql"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 
@@ -16,35 +15,9 @@ type RootRDBManager struct {
 	db *sql.DB
 }
 
-// InitRDBManager creates a RootRDBManager with a persistent admin connection
-func InitRDBManager() error {
-	db, err := sql.Open("postgres", CockroachDBAdminDSN)
-	if err != nil {
-		return err
-	}
-	if err := db.Ping(); err != nil {
-		db.Close()
-		return err
-	}
-	RDBManager = &RootRDBManager{db: db}
-	return nil
-}
-
 // Close closes the persistent admin connection
 func (m *RootRDBManager) Close() error {
 	return m.db.Close()
-}
-
-func init() {
-	if v := os.Getenv("COCKROACHDB_ADMIN_DSN"); v != "" {
-		CockroachDBAdminDSN = v
-	}
-	if v := os.Getenv("COCKROACHDB_HOST"); v != "" {
-		CockroachDBHost = v
-	}
-	if v := os.Getenv("COCKROACHDB_PORT"); v != "" {
-		CockroachDBPort = v
-	}
 }
 
 // sanitize replaces invalid characters for SQL identifiers
@@ -207,3 +180,33 @@ func (m *RootRDBManager) ListUserDatabases() ([]string, error) {
 	return dbs, nil
 }
 
+// DatabaseSize returns total size of user's database in bytes
+func (m *RootRDBManager) DatabaseSize(userUID string) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, err := m.db.Exec(m.useDB(userUID)); err != nil {
+		return 0, err
+	}
+	var size int64
+	err := m.db.QueryRow(
+		`SELECT COALESCE(SUM(total_bytes), 0)
+		 FROM crdb_internal.table_span_stats`).Scan(&size)
+	return size, err
+}
+
+// SchemaSize returns total size of a specific schema in bytes
+func (m *RootRDBManager) SchemaSize(userUID, schemaID string) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, err := m.db.Exec(m.useDB(userUID)); err != nil {
+		return 0, err
+	}
+	schName := fmt.Sprintf("schema_%s", sanitize(schemaID))
+	var size int64
+	err := m.db.QueryRow(
+		`SELECT COALESCE(SUM(s.total_bytes), 0)
+		 FROM crdb_internal.table_span_stats s
+		 JOIN crdb_internal.tables t ON t.table_id = s.table_id
+		 WHERE t.schema_name = $1`, schName).Scan(&size)
+	return size, err
+}

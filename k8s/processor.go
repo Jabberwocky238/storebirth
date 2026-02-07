@@ -22,6 +22,12 @@ func NewProcessor(queueSize int, poolSize int) *Processor {
 	}
 }
 
+func (p *Processor) Close() error {
+	close(p.JobQueue)
+	log.Println("[processor] stopped")
+	return nil
+}
+
 func (p *Processor) Submit(job Job) {
 	p.JobQueue <- job
 }

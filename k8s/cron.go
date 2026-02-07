@@ -51,6 +51,8 @@ func (s *CronScheduler) runTicker(ticker *time.Ticker, jobs []Job) {
 	}
 }
 
-func (s *CronScheduler) Stop() {
+func (s *CronScheduler) Close() error {
 	close(s.stopCh)
+	log.Println("[cron] stopped")
+	return nil
 }

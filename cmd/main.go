@@ -1,10 +1,15 @@
 package main
 
 import (
+	"context"
 	"flag"
+	"io"
 	"log"
+	"net/http"
 	"os"
+	"os/signal"
 	"path"
+	"syscall"
 	"time"
 
 	"jabberwocky238/console/dblayer"
@@ -16,73 +21,92 @@ import (
 	"github.com/resend/resend-go/v3"
 )
 
+type App struct {
+	closers []io.Closer
+}
+
+func (a *App) Register(c io.Closer) {
+	a.closers = append(a.closers, c)
+}
+
+// closerFunc adapts a func() to io.Closer
+type closerFunc func() error
+
+func (f closerFunc) Close() error { return f() }
+
+func (a *App) Shutdown() {
+	log.Println("[shutdown] starting...")
+	for i := len(a.closers) - 1; i >= 0; i-- {
+		if err := a.closers[i].Close(); err != nil {
+			log.Printf("[shutdown] error: %v", err)
+		}
+	}
+	log.Println("[shutdown] done")
+}
+
 func main() {
-	// Parse flags
 	listen := flag.String("l", "localhost:9900", "Listen address")
 	dbDSN := flag.String("d", "postgresql://myuser:your_password@localhost:5432/mydb?sslmode=disable", "Database DSN")
 	kubeconfig := flag.String("k", "", "Kubeconfig path (empty for in-cluster)")
 	flag.Parse()
 
-	// Check DOMAIN environment variable (required for IngressRoute creation)
-	// 检查是否为测试环境
 	if os.Getenv("ENV") != "test" {
 		checkEnv()
 	}
 
-	// Initialize database
+	app := &App{}
+
+	// 1. Database
 	if err := dblayer.InitDB(*dbDSN); err != nil {
 		log.Fatal("Failed to connect to database:", err)
 	}
-	defer dblayer.DB.Close()
+	app.Register(closerFunc(func() error {
+		log.Println("[shutdown] closing database")
+		return dblayer.DB.Close()
+	}))
 
-	// Initialize CockroachDB admin connection
+	// 2. CockroachDB
 	if err := k8s.InitRDBManager(); err != nil {
 		log.Printf("Warning: CockroachDB admin init failed: %v", err)
-		log.Println("Running without CockroachDB integration")
 	} else {
 		log.Println("CockroachDB admin connection initialized")
-		defer k8s.RDBManager.Close()
+		app.Register(k8s.RDBManager)
 	}
 
-	// Initialize K8s client
+	// 3. K8s + Controller
 	if err := k8s.InitK8s(*kubeconfig); err != nil {
 		log.Printf("Warning: K8s client init failed: %v", err)
-		log.Println("Running without K8s integration")
 	} else {
 		log.Println("K8s client initialized")
+		controller.EnsureCRD(k8s.RestConfig)
+		controller.EnsureCombinatorCRD(k8s.RestConfig)
 
-		// Ensure CRDs exist
-		if err := controller.EnsureCRD(k8s.RestConfig); err != nil {
-			log.Printf("Warning: WorkerApp CRD ensure failed: %v", err)
-		}
-		if err := controller.EnsureCombinatorCRD(k8s.RestConfig); err != nil {
-			log.Printf("Warning: CombinatorApp CRD ensure failed: %v", err)
-		}
-
-		// Start WorkerApp controller (informer)
 		stopCh := make(chan struct{})
-		defer close(stopCh)
+		app.Register(closerFunc(func() error {
+			log.Println("[shutdown] stopping controller")
+			close(stopCh)
+			return nil
+		}))
 		ctrl := controller.NewController(k8s.DynamicClient, k8s.K8sClient)
 		go ctrl.Start(stopCh)
 	}
 
-	// Start shared job processor
+	// 4. Processor
 	proc := k8s.NewProcessor(256, 4)
 	proc.Start()
+	app.Register(proc)
 
 	wh := handlers.NewWorkerHandler(proc)
 	ah := handlers.NewAuthHandler(proc)
 	ch := handlers.NewCombinatorHandler(proc)
 
-	// Start periodic domain check
-	k8s.StartPeriodicCheck()
-
-	// Start cron scheduler for periodic jobs
+	// 5. Cron
 	cron := k8s.NewCronScheduler(proc)
 	cron.RegisterJob(24*time.Hour, &handlers.UserAuditJob{})
-	proc.Submit(&handlers.UserAuditJob{}) // Run once at startup
+	cron.RegisterJob(12*time.Hour, &handlers.DomainCheckJob{})
+	proc.Submit(&handlers.UserAuditJob{})
 	cron.Start()
-	defer cron.Stop()
+	app.Register(cron)
 
 	log.Println("Control plane starting...")
 
@@ -111,6 +135,7 @@ func main() {
 	api.Use(handlers.AuthMiddleware())
 	{
 		api.GET("/rdb", ch.ListRDBs)
+		api.GET("/rdb/:id", ch.GetRDB)
 		api.POST("/rdb", ch.CreateRDB)
 		api.DELETE("/rdb/:id", ch.DeleteRDB)
 
@@ -151,9 +176,28 @@ func main() {
 		c.File("./dist/index.html")
 	})
 
-	// Start server
-	log.Printf("Server listening on %s", *listen)
-	r.Run(*listen)
+	// 6. HTTP Server
+	srv := &http.Server{Addr: *listen, Handler: r}
+	app.Register(closerFunc(func() error {
+		log.Println("[shutdown] stopping http server")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return srv.Shutdown(ctx)
+	}))
+
+	go func() {
+		log.Printf("Server listening on %s", *listen)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("listen error: %v", err)
+		}
+	}()
+
+	// Wait for signal
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	app.Shutdown()
 }
 
 func checkEnv() {

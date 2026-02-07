@@ -77,6 +77,7 @@ export const authAPI = {
 
 export const rdbAPI = {
   list: () => apiCall('/api/rdb', 'GET'),
+  get: (id: string) => apiCall(`/api/rdb/${id}`, 'GET'),
   create: (name: string) => apiCall('/api/rdb', 'POST', { name }, true),
   delete: (id: string) => apiCall(`/api/rdb/${id}`, 'DELETE', {}, true),
 };

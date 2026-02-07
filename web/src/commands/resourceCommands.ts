@@ -28,11 +28,13 @@ async function rdbList(terminal: TerminalAPI) {
     }
     terminal.print('');
     if (result.rdbs && result.rdbs.length > 0) {
-      result.rdbs.forEach((rdb: { id: string; name: string; url: string; size: number }) => {
+      result.rdbs.forEach((rdb: { id: string; resource_id: string; status: string; msg: string; created_at: string }) => {
+        const statusClass = rdb.status === 'active' ? 'success' : rdb.status === 'error' ? 'error' : 'warning';
         terminal.print(`ID: ${rdb.id}`, 'success');
-        terminal.print(`  Name: ${rdb.name}`);
-        terminal.print(`  URL: ${rdb.url}`);
-        terminal.print(`  Size: ${formatBytes(rdb.size)}`);
+        terminal.print(`  Resource ID: ${rdb.resource_id}`);
+        terminal.print(`  Status: ${rdb.status}`, statusClass);
+        if (rdb.msg) terminal.print(`  Msg: ${rdb.msg}`);
+        terminal.print(`  Created: ${rdb.created_at}`);
         terminal.print('');
       });
     } else {
@@ -64,15 +66,35 @@ async function rdbDelete(terminal: TerminalAPI, id: string) {
   }
 }
 
+async function rdbGet(terminal: TerminalAPI, id: string) {
+  try {
+    const result = await rdbAPI.get(id);
+    const statusClass = result.status === 'active' ? 'success' : result.status === 'error' ? 'error' : 'warning';
+    terminal.print('');
+    terminal.print(`=== RDB: ${result.id} ===`, 'info');
+    terminal.print(`  Resource ID: ${result.resource_id}`);
+    terminal.print(`  Status: ${result.status}`, statusClass);
+    if (result.msg) terminal.print(`  Msg: ${result.msg}`);
+    terminal.print(`  Schema Size: ${formatBytes(result.schema_size)}`);
+    terminal.print(`  Created: ${result.created_at}`);
+    terminal.print('');
+  } catch (error) {
+    terminal.print(`Failed to get RDB: ${(error as Error).message}`, 'error');
+  }
+}
+
 export async function rdbCommand(terminal: TerminalAPI, args: string[]) {
   if (!requireAuth(terminal)) return;
   switch (args[0]) {
     case 'list': await rdbList(terminal); break;
     case 'add': await rdbAdd(terminal); break;
+    case 'get':
+      if (!args[1]) { terminal.print('Usage: rdb get <id>', 'error'); return; }
+      await rdbGet(terminal, args[1]); break;
     case 'delete':
       if (!args[1]) { terminal.print('Usage: rdb delete <id>', 'error'); return; }
       await rdbDelete(terminal, args[1]); break;
-    default: terminal.print('Usage: rdb [list|add|delete]', 'error');
+    default: terminal.print('Usage: rdb [list|add|get|delete]', 'error');
   }
 }
 

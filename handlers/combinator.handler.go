@@ -48,7 +48,42 @@ func (h *CombinatorHandler) ListRDBs(c *gin.Context) {
 		return
 	}
 
-	c.JSON(200, gin.H{"rdbs": resources})
+	var dbSize int64
+	if k8s.RDBManager != nil {
+		dbSize, _ = k8s.RDBManager.DatabaseSize(userUID)
+	}
+
+	c.JSON(200, gin.H{"rdbs": resources, "database_size": dbSize})
+}
+
+// GetRDB returns detail of a single RDB resource including schema size
+func (h *CombinatorHandler) GetRDB(c *gin.Context) {
+	userUID := c.GetString("user_id")
+	id := c.Param("id")
+
+	cr, err := dblayer.GetCombinatorResource(id)
+	if err != nil {
+		c.JSON(404, gin.H{"error": "resource not found"})
+		return
+	}
+	if cr.UserUID != userUID {
+		c.JSON(403, gin.H{"error": "forbidden"})
+		return
+	}
+
+	var schemaSize int64
+	if k8s.RDBManager != nil {
+		schemaSize, _ = k8s.RDBManager.SchemaSize(userUID, cr.ResourceID)
+	}
+
+	c.JSON(200, gin.H{
+		"id":          cr.ID,
+		"resource_id": cr.ResourceID,
+		"status":      cr.Status,
+		"msg":         cr.Msg,
+		"created_at":  cr.CreatedAt,
+		"schema_size": schemaSize,
+	})
 }
 
 // CreateKV creates a new KV resource record and submits async job
