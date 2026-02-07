@@ -5,6 +5,7 @@ import (
 	"jabberwocky238/console/dblayer"
 	"jabberwocky238/console/handlers"
 	"jabberwocky238/console/k8s"
+	"jabberwocky238/console/k8s/controller"
 	"log"
 	"os"
 	"path"
@@ -37,6 +38,17 @@ func main() {
 		log.Println("Running without K8s integration")
 	} else {
 		log.Println("K8s client initialized")
+
+		// Ensure WorkerApp CRD exists
+		if err := controller.EnsureCRD(k8s.RestConfig); err != nil {
+			log.Printf("Warning: CRD ensure failed: %v", err)
+		}
+
+		// Start WorkerApp controller (informer)
+		stopCh := make(chan struct{})
+		defer close(stopCh)
+		ctrl := controller.NewController(k8s.DynamicClient, k8s.K8sClient)
+		go ctrl.Start(stopCh)
 	}
 
 	// Start worker handler (deploy queue + periodic reconcile)
@@ -84,6 +96,11 @@ func main() {
 		api.GET("/worker/:id", wh.GetWorker)
 		api.POST("/worker", wh.CreateWorker)
 		api.DELETE("/worker/:id", wh.DeleteWorker)
+
+		api.GET("/worker/:id/env", wh.GetWorkerEnv)
+		api.PUT("/worker/:id/env", wh.SetWorkerEnv)
+		api.GET("/worker/:id/secret", wh.GetWorkerSecrets)
+		api.PUT("/worker/:id/secret", wh.SetWorkerSecrets)
 
 		api.GET("/domain", handlers.ListCustomDomains)
 		api.GET("/domain/:id", handlers.GetCustomDomain)

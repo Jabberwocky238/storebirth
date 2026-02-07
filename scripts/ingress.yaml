@@ -28,25 +28,52 @@ spec:
         allowExternalNameServices: true
       kubernetesCRD:
         allowExternalNameServices: true
+        allowCrossNamespace: true
 ---
-# 在ingress命名空间也创建证书，供worker的IngressRoute使用
+# Console 证书
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: ingress-cert
+  name: console-cert
   namespace: ingress
 spec:
-  secretName: ingress-tls
+  secretName: console-tls
   issuerRef:
     name: zerossl-prod
     kind: ClusterIssuer
   dnsNames:
     - console.${DOMAIN}
-    - "*.combinator.${DOMAIN}"
-    - "*.worker.${DOMAIN}"
-    - "*.s3.${DOMAIN}"
-
 ---
+# Worker 证书
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: worker-cert
+  namespace: ingress
+spec:
+  secretName: worker-tls
+  issuerRef:
+    name: zerossl-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - "*.worker.${DOMAIN}"
+---
+# Combinator 证书
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: combinator-cert
+  namespace: ingress
+spec:
+  secretName: combinator-tls
+  issuerRef:
+    name: zerossl-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - "*.combinator.${DOMAIN}"
+    - "*.s3.${DOMAIN}"
+---
+# Console IngressRoute (跨 namespace 引用 console namespace 的 control-plane service)
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
@@ -56,20 +83,12 @@ spec:
   entryPoints:
     - websecure
   routes:
-    - match: Host(`console.${DOMAIN}`)
+    - match: "Host(`console.${DOMAIN}`)"
       kind: Rule
       services:
-        - name: console
+        - name: control-plane
+          namespace: console
           port: 9900
   tls:
-    secretName: ingress-tls
----
-# ExternalName Service - 指向console命名空间的control-plane Service
-apiVersion: v1
-kind: Service
-metadata:
-  name: console
-  namespace: ingress
-spec:
-  type: ExternalName
-  externalName: control-plane.console.svc.cluster.local
+    secretName: console-tls
+

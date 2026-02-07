@@ -35,11 +35,13 @@ type CustomDomain struct {
 
 // Worker model
 type Worker struct {
-	ID              int    `json:"-"`
-	UserUID         string `json:"user_uid"`
-	WorkerID        string `json:"worker_id"`
-	WorkerName      string `json:"worker_name"`
-	ActiveVersionID *int   `json:"active_version_id"`
+	ID              int       `json:"-"`
+	UserUID         string    `json:"user_uid"`
+	WorkerID        string    `json:"worker_id"`
+	WorkerName      string    `json:"worker_name"`
+	ActiveVersionID *int      `json:"active_version_id"`
+	EnvJSON         string    `json:"env_json"`     // JSON object: {"KEY": "VALUE", ...}
+	SecretsJSON     string    `json:"secrets_json"`  // JSON array: ["secret1", "secret2", ...]
 	CreatedAt       time.Time `json:"created_at"`
 }
 

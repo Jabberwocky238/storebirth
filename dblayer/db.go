@@ -2,11 +2,14 @@ package dblayer
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 
 	_ "github.com/lib/pq"
 )
+
+var ErrNotFound = errors.New("not found")
 
 // DB connection
 var DB *sql.DB

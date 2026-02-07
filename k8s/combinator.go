@@ -279,11 +279,6 @@ func (c *Combinator) Deploy() error {
 		return fmt.Errorf("failed to create service: %w", err)
 	}
 
-	// Create ExternalName Service
-	if err := c.createExternalService(ctx); err != nil {
-		return fmt.Errorf("failed to create external service: %w", err)
-	}
-
 	// Create IngressRoute
 	if err := c.createIngressRoute(ctx); err != nil {
 		return fmt.Errorf("failed to create ingress route: %w", err)
@@ -306,9 +301,8 @@ func (c *Combinator) Delete() error {
 	// Delete ConfigMap
 	K8sClient.CoreV1().ConfigMaps(CombinatorNamespace).Delete(ctx, c.ConfigMapName(), metav1.DeleteOptions{})
 
-	// Delete Services
+	// Delete Service
 	K8sClient.CoreV1().Services(CombinatorNamespace).Delete(ctx, c.Name(), metav1.DeleteOptions{})
-	K8sClient.CoreV1().Services(IngressNamespace).Delete(ctx, c.Name(), metav1.DeleteOptions{})
 
 	// Delete IngressRoute
 	c.deleteIngressRoute(ctx)
@@ -346,29 +340,6 @@ func (c *Combinator) createService(ctx context.Context) error {
 	return err
 }
 
-// createExternalService creates an ExternalName Service in ingress namespace
-func (c *Combinator) createExternalService(ctx context.Context) error {
-	targetService := fmt.Sprintf("%s.%s.svc.cluster.local", c.Name(), CombinatorNamespace)
-
-	service := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      c.Name(),
-			Namespace: IngressNamespace,
-			Labels: map[string]string{
-				"app":      "combinator",
-				"user-uid": c.UserUID,
-			},
-		},
-		Spec: corev1.ServiceSpec{
-			Type:         corev1.ServiceTypeExternalName,
-			ExternalName: targetService,
-		},
-	}
-
-	_, err := K8sClient.CoreV1().Services(IngressNamespace).Create(ctx, service, metav1.CreateOptions{})
-	return err
-}
-
 // createIngressRoute creates an IngressRoute in ingress namespace
 func (c *Combinator) createIngressRoute(ctx context.Context) error {
 	if DynamicClient == nil {
@@ -395,20 +366,21 @@ func (c *Combinator) createIngressRoute(ctx context.Context) error {
 						"kind":  "Rule",
 						"services": []any{
 							map[string]any{
-								"name": c.Name(),
-								"port": 8899,
+								"name":      c.Name(),
+								"namespace": CombinatorNamespace,
+								"port":      8899,
 							},
 						},
 					},
 				},
 				"tls": map[string]any{
-					"secretName": "ingress-tls",
+					"secretName": "combinator-tls",
 				},
 			},
 		},
 	}
 
-	_, err := DynamicClient.Resource(ingressRouteGVR).Namespace(IngressNamespace).Create(ctx, ingressRoute, metav1.CreateOptions{})
+	_, err := DynamicClient.Resource(IngressRouteGVR).Namespace(IngressNamespace).Create(ctx, ingressRoute, metav1.CreateOptions{})
 	return err
 }
 
@@ -417,5 +389,5 @@ func (c *Combinator) deleteIngressRoute(ctx context.Context) error {
 	if DynamicClient == nil {
 		return fmt.Errorf("dynamic client not initialized")
 	}
-	return DynamicClient.Resource(ingressRouteGVR).Namespace(IngressNamespace).Delete(ctx, c.Name(), metav1.DeleteOptions{})
+	return DynamicClient.Resource(IngressRouteGVR).Namespace(IngressNamespace).Delete(ctx, c.Name(), metav1.DeleteOptions{})
 }

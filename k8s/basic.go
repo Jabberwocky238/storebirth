@@ -11,14 +11,15 @@ import (
 var (
 	K8sClient           *kubernetes.Clientset
 	DynamicClient       dynamic.Interface
+	RestConfig          *rest.Config
 	Domain              string
-	Namespace           = "console" // Control plane namespace
+	Namespace           = "console"    // Control plane namespace
 	CombinatorNamespace = "combinator" // Combinator pods namespace
 	IngressNamespace    = "ingress"    // Ingress namespace
 	WorkerNamespace     = "worker"     // Worker namespace
 )
 
-var ingressRouteGVR = schema.GroupVersionResource{
+var IngressRouteGVR = schema.GroupVersionResource{
 	Group:    "traefik.io",
 	Version:  "v1alpha1",
 	Resource: "ingressroutes",
@@ -45,6 +46,8 @@ func InitK8s(kubeconfig string) error {
 	if err != nil {
 		return err
 	}
+
+	RestConfig = config
 
 	K8sClient, err = kubernetes.NewForConfig(config)
 	if err != nil {

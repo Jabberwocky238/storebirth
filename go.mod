@@ -9,6 +9,7 @@ require (
 	github.com/lib/pq v1.10.9
 	golang.org/x/crypto v0.47.0
 	k8s.io/api v0.35.0
+	k8s.io/apiextensions-apiserver v0.35.0
 	k8s.io/apimachinery v0.35.0
 	k8s.io/client-go v0.35.0
 )

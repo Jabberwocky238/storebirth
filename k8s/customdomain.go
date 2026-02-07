@@ -185,7 +185,7 @@ func (cd *CustomDomain) CreateIngressRoute() error {
 		},
 	}
 
-	_, err := DynamicClient.Resource(ingressRouteGVR).Namespace(IngressNamespace).Create(ctx, ingressRoute, metav1.CreateOptions{})
+	_, err := DynamicClient.Resource(IngressRouteGVR).Namespace(IngressNamespace).Create(ctx, ingressRoute, metav1.CreateOptions{})
 	return err
 }
 
@@ -247,7 +247,7 @@ func DeleteCustomDomain(id string) error {
 
 	// Delete IngressRoute
 	if DynamicClient != nil {
-		DynamicClient.Resource(ingressRouteGVR).Namespace(IngressNamespace).Delete(ctx, name, metav1.DeleteOptions{})
+		DynamicClient.Resource(IngressRouteGVR).Namespace(IngressNamespace).Delete(ctx, name, metav1.DeleteOptions{})
 	}
 
 	// Delete Certificate

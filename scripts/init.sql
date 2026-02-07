@@ -39,6 +39,8 @@ CREATE TABLE IF NOT EXISTS workers (
     worker_id VARCHAR(16) UNIQUE NOT NULL,
     worker_name VARCHAR(255) NOT NULL,
     active_version_id INTEGER,
+    env_json TEXT NOT NULL DEFAULT '{}',
+    secrets_json TEXT NOT NULL DEFAULT '[]',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

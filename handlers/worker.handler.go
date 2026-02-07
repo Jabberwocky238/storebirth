@@ -1,64 +1,44 @@
 package handlers
 
 import (
+	"encoding/json"
 	"log"
 	"strconv"
 
 	"jabberwocky238/console/dblayer"
-	"jabberwocky238/console/k8s"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
+type workerTask struct {
+	kind      string // "deploy", "sync_env", "sync_secret", "delete_cr"
+	versionID int
+	workerID  string
+	userUID   string
+	data      map[string]string
+}
+
 type WorkerHandler struct {
-	queue chan int
+	queue chan workerTask
 }
 
 func NewWorkerHandler() *WorkerHandler {
 	return &WorkerHandler{
-		queue: make(chan int, 100),
+		queue: make(chan workerTask, 100),
 	}
 }
 
 func (h *WorkerHandler) Start() {
 	go func() {
-		for versionID := range h.queue {
-			h.deploy(versionID)
+		for task := range h.queue {
+			h.process(task)
 		}
 	}()
 	log.Println("[worker-handler] started")
 }
 
-func (h *WorkerHandler) deploy(versionID int) {
-	v, err := dblayer.GetDeployVersion(versionID)
-	if err != nil {
-		log.Printf("[worker-handler] get version %d failed: %v", versionID, err)
-		return
-	}
-	w, err := dblayer.GetWorkerByID(v.WorkerID)
-	if err != nil {
-		log.Printf("[worker-handler] get worker %s failed: %v", v.WorkerID, err)
-		dblayer.UpdateDeployVersionStatus(versionID, "error", err.Error())
-		return
-	}
-	worker := &k8s.Worker{
-		WorkerID: w.WorkerID,
-		OwnerID:  w.UserUID,
-		Image:    v.Image,
-		Port:     v.Port,
-	}
-	if err := worker.Deploy(); err != nil {
-		log.Printf("[worker-handler] deploy version %d failed: %v", versionID, err)
-		dblayer.UpdateDeployVersionStatus(versionID, "error", err.Error())
-		return
-	}
-	log.Printf("[worker-handler] deploy version %d success", versionID)
-	dblayer.UpdateDeployVersionStatus(versionID, "success", "")
-	dblayer.SetWorkerActiveVersion(v.WorkerID, versionID)
-}
-
-// CreateWorker 创建 worker 记录，返回 worker_id，status=unloaded
+// CreateWorker 创建 worker 记录
 func (h *WorkerHandler) CreateWorker(c *gin.Context) {
 	userUID := c.GetString("user_id")
 
@@ -88,30 +68,23 @@ func (h *WorkerHandler) DeleteWorker(c *gin.Context) {
 	userUID := c.GetString("user_id")
 	workerID := c.Param("id")
 
-	// 验证 worker 属于该用户
-	w, err := dblayer.GetWorkerByID(workerID)
-	if err != nil || w.UserUID != userUID {
-		c.JSON(404, gin.H{"error": "worker not found"})
-		return
-	}
+	// 异步删 CR（可能不存在）
+	h.queue <- workerTask{kind: "delete_cr", workerID: workerID, userUID: userUID}
 
-	worker := &k8s.Worker{WorkerID: workerID, OwnerID: userUID}
-	if err := worker.Delete(); err != nil {
-		log.Printf("failed to delete k8s resources for worker %s: %v", workerID, err)
-		c.JSON(500, gin.H{"error": "failed to delete worker resources"})
-		return
-	}
-
-	// 删除数据库记录
-	if err := dblayer.DeleteWorker(workerID); err != nil {
-		c.JSON(500, gin.H{"error": "failed to delete worker"})
+	// 单次操作：验证归属 + 删除
+	if err := dblayer.DeleteWorkerByOwner(workerID, userUID); err != nil {
+		if err == dblayer.ErrNotFound {
+			c.JSON(404, gin.H{"error": "worker not found"})
+		} else {
+			c.JSON(500, gin.H{"error": "failed to delete worker"})
+		}
 		return
 	}
 
 	c.JSON(200, gin.H{"message": "worker deleted"})
 }
 
-// ListWorkers 列出用户所有 worker（从数据库读）
+// ListWorkers 列出用户所有 worker
 func (h *WorkerHandler) ListWorkers(c *gin.Context) {
 	userUID := c.GetString("user_id")
 
@@ -129,8 +102,8 @@ func (h *WorkerHandler) GetWorker(c *gin.Context) {
 	userUID := c.GetString("user_id")
 	workerID := c.Param("id")
 
-	w, err := dblayer.GetWorkerByID(workerID)
-	if err != nil || w.UserUID != userUID {
+	w, err := dblayer.GetWorkerByOwner(workerID, userUID)
+	if err != nil {
 		c.JSON(404, gin.H{"error": "worker not found"})
 		return
 	}
@@ -168,27 +141,116 @@ func (h *WorkerHandler) DeployWorker(c *gin.Context) {
 		return
 	}
 
-	// 验证 worker 属于该用户
-	w, err := dblayer.GetWorkerByID(req.WorkerID)
-	if err != nil || w.UserUID != req.UserUID {
-		c.JSON(404, gin.H{"error": "worker not found"})
-		return
-	}
-
-	// 创建部署版本
-	versionID, err := dblayer.CreateDeployVersion(req.WorkerID, req.Image, req.Port)
+	// 单次操作：验证归属 + 创建部署版本
+	versionID, err := dblayer.CreateDeployVersionForOwner(req.WorkerID, req.UserUID, req.Image, req.Port)
 	if err != nil {
-		c.JSON(500, gin.H{"error": "failed to create deploy version"})
+		if err == dblayer.ErrNotFound {
+			c.JSON(404, gin.H{"error": "worker not found"})
+		} else {
+			c.JSON(500, gin.H{"error": "failed to create deploy version"})
+		}
 		return
 	}
 
-	// 入队，由后台 goroutine 异步执行部署
-	h.queue <- versionID
+	h.queue <- workerTask{kind: "deploy", versionID: versionID}
 
-	// 立刻返回 200
 	c.JSON(200, gin.H{
 		"worker_id":  req.WorkerID,
 		"version_id": versionID,
 		"status":     "loading",
 	})
+}
+
+// GetWorkerEnv 获取 worker 环境变量
+func (h *WorkerHandler) GetWorkerEnv(c *gin.Context) {
+	userUID := c.GetString("user_id")
+	workerID := c.Param("id")
+
+	// 单次查询：验证归属 + 获取 env_json
+	envJSON, err := dblayer.GetWorkerEnvByOwner(workerID, userUID)
+	if err != nil {
+		c.JSON(404, gin.H{"error": "worker not found"})
+		return
+	}
+
+	var envMap map[string]string
+	json.Unmarshal([]byte(envJSON), &envMap)
+	c.JSON(200, envMap)
+}
+
+// SetWorkerEnv 设置 worker 环境变量
+func (h *WorkerHandler) SetWorkerEnv(c *gin.Context) {
+	userUID := c.GetString("user_id")
+	workerID := c.Param("id")
+
+	var envMap map[string]string
+	if err := c.ShouldBindJSON(&envMap); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	data, _ := json.Marshal(envMap)
+	// 单次操作：验证归属 + 更新 env_json
+	if err := dblayer.SetWorkerEnvByOwner(workerID, userUID, string(data)); err != nil {
+		if err == dblayer.ErrNotFound {
+			c.JSON(404, gin.H{"error": "worker not found"})
+		} else {
+			c.JSON(500, gin.H{"error": "failed to set env"})
+		}
+		return
+	}
+
+	h.queue <- workerTask{kind: "sync_env", workerID: workerID, userUID: userUID, data: envMap}
+
+	c.JSON(200, envMap)
+}
+
+// GetWorkerSecrets 获取 worker secrets
+func (h *WorkerHandler) GetWorkerSecrets(c *gin.Context) {
+	userUID := c.GetString("user_id")
+	workerID := c.Param("id")
+
+	// 单次查询：验证归属 + 获取 secrets_json
+	secretsJSON, err := dblayer.GetWorkerSecretsByOwner(workerID, userUID)
+	if err != nil {
+		c.JSON(404, gin.H{"error": "worker not found"})
+		return
+	}
+
+	var secrets []string
+	json.Unmarshal([]byte(secretsJSON), &secrets)
+	c.JSON(200, secrets)
+}
+
+// SetWorkerSecrets 设置 worker secrets
+// 用户提交 {"KEY": "VALUE", ...}，key 名列表存数据库，完整 kv 写入 K8s Secret
+func (h *WorkerHandler) SetWorkerSecrets(c *gin.Context) {
+	userUID := c.GetString("user_id")
+	workerID := c.Param("id")
+
+	var secretMap map[string]string
+	if err := c.ShouldBindJSON(&secretMap); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	keys := make([]string, 0, len(secretMap))
+	for k := range secretMap {
+		keys = append(keys, k)
+	}
+	keysData, _ := json.Marshal(keys)
+
+	// 单次操作：验证归属 + 更新 secrets_json
+	if err := dblayer.SetWorkerSecretsByOwner(workerID, userUID, string(keysData)); err != nil {
+		if err == dblayer.ErrNotFound {
+			c.JSON(404, gin.H{"error": "worker not found"})
+		} else {
+			c.JSON(500, gin.H{"error": "failed to set secrets"})
+		}
+		return
+	}
+
+	h.queue <- workerTask{kind: "sync_secret", workerID: workerID, userUID: userUID, data: secretMap}
+
+	c.JSON(200, keys)
 }
