@@ -97,7 +97,7 @@ spec:
         readinessProbe:
           httpGet:
             path: /health?ready=1
-            port: http
+            port: 8080
           initialDelaySeconds: 15
           periodSeconds: 5
   volumeClaimTemplates:

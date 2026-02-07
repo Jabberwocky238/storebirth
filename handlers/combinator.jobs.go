@@ -35,6 +35,10 @@ func (j *CreateRDBJob) Do() error {
 		dblayer.UpdateCombinatorResourceStatus(j.RecordID, "error", "cockroachdb not available")
 		return fmt.Errorf("cockroachdb not available")
 	}
+	if err := k8s.RDBManager.InitUserRDB(j.UserUID); err != nil {
+		dblayer.UpdateCombinatorResourceStatus(j.RecordID, "error", err.Error())
+		return fmt.Errorf("init user rdb: %w", err)
+	}
 	if err := k8s.RDBManager.CreateSchema(j.UserUID, j.ResourceID); err != nil {
 		dblayer.UpdateCombinatorResourceStatus(j.RecordID, "error", err.Error())
 		return fmt.Errorf("create schema: %w", err)

@@ -229,7 +229,7 @@ func (m *RootRDBManager) ListUserDatabases() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.Query(`SHOW DATABASES`)
+	rows, err := db.Query(`SELECT database_name FROM [SHOW DATABASES] WHERE database_name LIKE 'db_%'`)
 	if err != nil {
 		return nil, err
 	}
@@ -241,9 +241,7 @@ func (m *RootRDBManager) ListUserDatabases() ([]string, error) {
 		if err := rows.Scan(&name); err != nil {
 			return nil, err
 		}
-		if strings.HasPrefix(name, "db_") {
-			dbs = append(dbs, name)
-		}
+		dbs = append(dbs, name)
 	}
 	return dbs, nil
 }
