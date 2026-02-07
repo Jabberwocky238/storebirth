@@ -41,6 +41,7 @@ func (j *UserAuditJob) Do() error {
 		List(ctx, metav1.ListOptions{})
 	if err != nil {
 		log.Printf("[audit] list combinator CRs failed: %v", err)
+		combinatorCRs = nil
 	}
 
 	workerCRs, err := k8s.DynamicClient.Resource(controller.WorkerAppGVR).
@@ -48,6 +49,7 @@ func (j *UserAuditJob) Do() error {
 		List(ctx, metav1.ListOptions{})
 	if err != nil {
 		log.Printf("[audit] list worker CRs failed: %v", err)
+		workerCRs = nil
 	}
 
 	// 3. 一次性拉取所有 db_ 数据库列表

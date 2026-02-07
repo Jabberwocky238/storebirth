@@ -252,16 +252,15 @@ func (c *Combinator) EnsureIngressRoute(ctx context.Context) error {
 	}
 
 	client := k8s.DynamicClient.Resource(k8s.IngressRouteGVR).Namespace(k8s.IngressNamespace)
-	_, err := client.Get(ctx, c.Name(), metav1.GetOptions{})
+	existing, err := client.Get(ctx, c.Name(), metav1.GetOptions{})
 	if errors.IsNotFound(err) {
 		_, err = client.Create(ctx, ingressRoute, metav1.CreateOptions{})
 	} else if err == nil {
+		ingressRoute.SetResourceVersion(existing.GetResourceVersion())
 		_, err = client.Update(ctx, ingressRoute, metav1.UpdateOptions{})
 	}
 	return err
 }
-
-// DeleteAll deletes all sub-resources for this combinator
 func (c *Combinator) DeleteAll(ctx context.Context) {
 	if k8s.K8sClient != nil {
 		k8s.K8sClient.AppsV1().Deployments(k8s.CombinatorNamespace).Delete(ctx, c.Name(), metav1.DeleteOptions{})
