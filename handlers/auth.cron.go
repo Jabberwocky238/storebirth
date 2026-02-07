@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"jabberwocky238/console/dblayer"
@@ -35,22 +36,22 @@ func (j *UserAuditJob) Do() error {
 
 	ctx := context.Background()
 
-	// 2. 一次性拉取所有 CR 列表
+	// 2. 拉取所有 CR 列表（失败则中止，避免误判空列表导致跳过清理）
 	combinatorCRs, err := k8s.DynamicClient.Resource(controller.CombinatorAppGVR).
 		Namespace(k8s.CombinatorNamespace).
 		List(ctx, metav1.ListOptions{})
 	if err != nil {
-		log.Printf("[audit] list combinator CRs failed: %v", err)
-		combinatorCRs = nil
+		return fmt.Errorf("list combinator CRs: %w", err)
 	}
+	log.Printf("[audit] found %d combinator CRs", len(combinatorCRs.Items))
 
 	workerCRs, err := k8s.DynamicClient.Resource(controller.WorkerAppGVR).
 		Namespace(k8s.WorkerNamespace).
 		List(ctx, metav1.ListOptions{})
 	if err != nil {
-		log.Printf("[audit] list worker CRs failed: %v", err)
-		workerCRs = nil
+		return fmt.Errorf("list worker CRs: %w", err)
 	}
+	log.Printf("[audit] found %d worker CRs", len(workerCRs.Items))
 
 	// 3. 一次性拉取所有 db_ 数据库列表
 	var existingDBs []string
@@ -63,20 +64,14 @@ func (j *UserAuditJob) Do() error {
 	}
 
 	// 4. 检查用户是否已初始化，未初始化则补建
-	if combinatorCRs != nil {
-		checkUserInitialization(userSet, combinatorCRs)
-	}
+	checkUserInitialization(userSet, combinatorCRs)
 	if existingDBs != nil {
 		checkUserRDBInitialization(userSet, existingDBs)
 	}
 
-	// 5. 清理孤儿资源
-	if workerCRs != nil {
-		cleanOrphanWorkers(userSet, workerCRs)
-	}
-	if combinatorCRs != nil {
-		cleanOrphanCombinators(userSet, combinatorCRs)
-	}
+	// 5. 清理孤儿 CR（删 CR → controller onDelete 级联清理子资源）
+	cleanOrphanWorkers(userSet, workerCRs)
+	cleanOrphanCombinators(userSet, combinatorCRs)
 	if existingDBs != nil {
 		cleanOrphanRDBs(userSet, existingDBs)
 	}

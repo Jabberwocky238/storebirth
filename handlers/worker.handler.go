@@ -191,6 +191,11 @@ func (h *WorkerHandler) SetWorkerEnv(c *gin.Context) {
 		return
 	}
 
+	if req.Key == "COMBINATOR_API_ENDPOINT" {
+		c.JSON(400, gin.H{"error": "COMBINATOR_API_ENDPOINT is managed by the system"})
+		return
+	}
+
 	// 读取现有 env
 	envJSON, err := dblayer.GetWorkerEnvByOwner(workerID, userUID)
 	if err != nil {

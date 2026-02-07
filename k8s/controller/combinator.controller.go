@@ -28,12 +28,16 @@ func (cc *CombinatorController) onAdd(obj interface{}) {
 }
 
 func (cc *CombinatorController) onUpdate(oldObj, newObj interface{}) {
-	u, ok := newObj.(*unstructured.Unstructured)
-	if !ok {
+	oldU, ok1 := oldObj.(*unstructured.Unstructured)
+	newU, ok2 := newObj.(*unstructured.Unstructured)
+	if !ok1 || !ok2 {
 		return
 	}
-	log.Printf("[controller] CombinatorApp updated: %s", u.GetName())
-	cc.reconcile(u)
+	if oldU.GetGeneration() == newU.GetGeneration() {
+		return // status-only update, skip reconcile
+	}
+	log.Printf("[controller] CombinatorApp updated: %s", newU.GetName())
+	cc.reconcile(newU)
 }
 
 func (cc *CombinatorController) onDelete(obj interface{}) {
