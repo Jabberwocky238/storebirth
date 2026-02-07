@@ -11,6 +11,7 @@ import (
 	"path"
 
 	"github.com/gin-gonic/gin"
+	"github.com/resend/resend-go/v3"
 )
 
 func main() {
@@ -137,6 +138,14 @@ func checkEnv() {
 	}
 	log.Printf("Using domain: %s", domain)
 	k8s.Domain = domain
+
+	resend_api_key := os.Getenv("RESEND_API_KEY")
+	if resend_api_key == "" {
+		panic("RESEND_API_KEY environment variable is required")
+	}
+	log.Print("RESEND_API_KEY is set")
+	handlers.RESEND_API_KEY = resend_api_key
+	handlers.ResendClient = resend.NewClient(resend_api_key)
 }
 
 func crossOriginMiddleware() gin.HandlerFunc {

@@ -3,17 +3,20 @@ package handlers
 import (
 	"bytes"
 	"io"
+	"jabberwocky238/console/dblayer"
+	"jabberwocky238/console/k8s"
 	"log"
 	"strings"
 	"time"
 
-	"jabberwocky238/console/dblayer"
-	"jabberwocky238/console/k8s"
+	"github.com/resend/resend-go/v3"
 
 	"github.com/gin-gonic/gin"
 )
 
 var SPECIAL_CODE = "701213"
+var RESEND_API_KEY string
+var ResendClient *resend.Client
 
 // Register handles user registration
 func Register(c *gin.Context) {
@@ -205,13 +208,28 @@ func SendCode(c *gin.Context) {
 
 	code := GenerateCode()
 	expiresAt := time.Now().Add(10 * time.Minute)
+	params := &resend.SendEmailRequest{
+		From:    "Combinator <combinator@enzyme.cloud>",
+		To:      []string{req.Email},
+		Html:    "<strong>Your verification code is: " + code + "</strong>",
+		Subject: code + " is your verification code for Combinator Console",
+		// Cc:      []string{"cc@example.com"},
+		// Bcc:     []string{"bcc@example.com"},
+		// ReplyTo: "replyto@example.com",
+	}
+	sent, err := ResendClient.Emails.Send(params)
+	if err != nil {
+		log.Printf("failed to send email: %v", err)
+		c.JSON(500, gin.H{"error": "failed to send email, " + err.Error()})
+		return
+	}
 
 	if err := dblayer.SaveVerificationCode(req.Email, code, expiresAt); err != nil {
 		c.JSON(500, gin.H{"error": "failed to save code"})
 		return
 	}
 
-	c.JSON(200, gin.H{"message": "code sent", "code": code})
+	c.JSON(200, gin.H{"message": "code sent", "code": code, "misc": sent})
 }
 
 // ResetPassword resets password with verification code
