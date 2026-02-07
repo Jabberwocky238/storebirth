@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
 	"jabberwocky238/console/k8s"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/informers"
@@ -41,7 +43,7 @@ func (c *WorkerAppController) Start(stopCh <-chan struct{}) {
 		DeleteFunc: c.onDelete,
 	})
 
-	// 2. Sub-resource informer: Deployment + Service in worker namespace
+	// 2. Sub-resource informer: Deployment + Service + ConfigMap + Secret in worker namespace
 	k8sFactory := informers.NewSharedInformerFactoryWithOptions(
 		c.k8sClient, 30*time.Second,
 		informers.WithNamespace(k8s.WorkerNamespace),
@@ -51,6 +53,13 @@ func (c *WorkerAppController) Start(stopCh <-chan struct{}) {
 	}
 	k8sFactory.Apps().V1().Deployments().Informer().AddEventHandler(subHandler)
 	k8sFactory.Core().V1().Services().Informer().AddEventHandler(subHandler)
+
+	// Watch ConfigMap and Secret updates to trigger Deployment rolling restart
+	configHandler := cache.ResourceEventHandlerFuncs{
+		UpdateFunc: c.onConfigUpdate,
+	}
+	k8sFactory.Core().V1().ConfigMaps().Informer().AddEventHandler(configHandler)
+	k8sFactory.Core().V1().Secrets().Informer().AddEventHandler(configHandler)
 
 	// 3. IngressRoute informer: watch IngressRoute in ingress namespace
 	ingressDynFactory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(
@@ -136,6 +145,43 @@ func (c *WorkerAppController) onSubResourceDelete(obj interface{}) {
 	}
 	log.Printf("[controller] sub-resource deleted for %s, re-reconciling", appName)
 	c.reconcile(u)
+}
+
+// --- ConfigMap / Secret update handler ---
+
+func (c *WorkerAppController) onConfigUpdate(oldObj, newObj interface{}) {
+	old, ok1 := oldObj.(metav1.Object)
+	cur, ok2 := newObj.(metav1.Object)
+	if !ok1 || !ok2 {
+		return
+	}
+	// Skip if resourceVersion unchanged (re-list, not a real update)
+	if old.GetResourceVersion() == cur.GetResourceVersion() {
+		return
+	}
+	appName := cur.GetLabels()["app"]
+	if appName == "" {
+		return
+	}
+	log.Printf("[controller] config/secret updated for %s, restarting deployment", appName)
+	c.restartDeployment(appName)
+}
+
+func (c *WorkerAppController) restartDeployment(name string) {
+	if k8s.K8sClient == nil {
+		return
+	}
+	patch := fmt.Sprintf(
+		`{"spec":{"template":{"metadata":{"annotations":{"console.app238.com/restartedAt":"%s"}}}}}`,
+		strconv.FormatInt(time.Now().Unix(), 10),
+	)
+	_, err := k8s.K8sClient.AppsV1().Deployments(k8s.WorkerNamespace).Patch(
+		context.Background(), name, types.StrategicMergePatchType,
+		[]byte(patch), metav1.PatchOptions{},
+	)
+	if err != nil {
+		log.Printf("[controller] restart deployment %s failed: %v", name, err)
+	}
 }
 
 // --- Reconcile: ensure all 5 sub-resources exist ---

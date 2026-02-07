@@ -144,9 +144,11 @@ async function workerList(terminal: TerminalAPI) {
     terminal.print('');
     terminal.print('=== Workers ===', 'info');
     if (result && result.length > 0) {
-      result.forEach((w: { worker_id: string; worker_name: string; active_version_id: number | null }) => {
+      result.forEach((w: { worker_id: string; worker_name: string; status: string; active_version_id: number | null }) => {
+        const statusClass = w.status === 'active' ? 'success' : w.status === 'error' ? 'error' : 'warning';
         terminal.print(`ID: ${w.worker_id}`, 'success');
         terminal.print(`  Name: ${w.worker_name}`);
+        terminal.print(`  Status: ${w.status}`, statusClass);
         terminal.print(`  Active Version: ${w.active_version_id ?? 'none'}`);
         terminal.print('');
       });
@@ -177,6 +179,7 @@ async function workerGet(terminal: TerminalAPI, id: string) {
     terminal.print('');
     terminal.print(`=== Worker: ${w.worker_name} ===`, 'info');
     terminal.print(`  ID: ${w.worker_id}`);
+    terminal.print(`  Status: ${w.status}`, w.status === 'active' ? 'success' : w.status === 'error' ? 'error' : 'warning');
     terminal.print(`  Active Version: ${w.active_version_id ?? 'none'}`);
     terminal.print('');
     if (result.versions && result.versions.length > 0) {
@@ -209,6 +212,91 @@ async function workerDelete(terminal: TerminalAPI, id: string) {
   }
 }
 
+async function workerEnv(terminal: TerminalAPI, id: string) {
+  try {
+    const env = await workerAPI.getEnv(id);
+    terminal.print('');
+    terminal.print(`=== Env: ${id} ===`, 'info');
+    const keys = Object.keys(env);
+    if (keys.length > 0) {
+      keys.forEach(k => terminal.print(`  ${k}=${env[k]}`));
+    } else {
+      terminal.print('  (empty)', 'warning');
+    }
+    terminal.print('');
+  } catch (error) {
+    terminal.print(`Failed to get env: ${(error as Error).message}`, 'error');
+  }
+}
+
+async function workerEnvSet(terminal: TerminalAPI, id: string) {
+  try {
+    terminal.print('Enter env vars (KEY=VALUE), empty line to finish:', 'info');
+    const env: Record<string, string> = {};
+    while (true) {
+      const line = await terminal.waitForInput('');
+      if (!line) break;
+      const idx = line.indexOf('=');
+      if (idx <= 0) {
+        terminal.print('Invalid format, use KEY=VALUE', 'error');
+        continue;
+      }
+      env[line.slice(0, idx)] = line.slice(idx + 1);
+    }
+    if (Object.keys(env).length === 0) {
+      terminal.print('No env vars provided, cancelled', 'warning');
+      return;
+    }
+    const result = await workerAPI.setEnv(id, env);
+    terminal.print('Env updated, syncing to cluster...', 'success');
+    Object.keys(result).forEach(k => terminal.print(`  ${k}=${result[k]}`));
+  } catch (error) {
+    terminal.print(`Failed to set env: ${(error as Error).message}`, 'error');
+  }
+}
+
+async function workerSecret(terminal: TerminalAPI, id: string) {
+  try {
+    const keys = await workerAPI.getSecrets(id);
+    terminal.print('');
+    terminal.print(`=== Secrets: ${id} ===`, 'info');
+    if (keys && keys.length > 0) {
+      keys.forEach((k: string) => terminal.print(`  ${k}=********`));
+    } else {
+      terminal.print('  (empty)', 'warning');
+    }
+    terminal.print('');
+  } catch (error) {
+    terminal.print(`Failed to get secrets: ${(error as Error).message}`, 'error');
+  }
+}
+
+async function workerSecretSet(terminal: TerminalAPI, id: string) {
+  try {
+    terminal.print('Enter secrets (KEY=VALUE), empty line to finish:', 'info');
+    const secrets: Record<string, string> = {};
+    while (true) {
+      const line = await terminal.waitForInput('');
+      if (!line) break;
+      const idx = line.indexOf('=');
+      if (idx <= 0) {
+        terminal.print('Invalid format, use KEY=VALUE', 'error');
+        continue;
+      }
+      secrets[line.slice(0, idx)] = line.slice(idx + 1);
+    }
+    if (Object.keys(secrets).length === 0) {
+      terminal.print('No secrets provided, cancelled', 'warning');
+      return;
+    }
+    const keys = await workerAPI.setSecrets(id, secrets);
+    terminal.print('Secrets updated, syncing to cluster...', 'success');
+    keys.forEach((k: string) => terminal.print(`  ${k}=********`));
+  } catch (error) {
+    terminal.print(`Failed to set secrets: ${(error as Error).message}`, 'error');
+  }
+}
+
 export async function workerCommand(terminal: TerminalAPI, args: string[]) {
   if (!requireAuth(terminal)) return;
   switch (args[0]) {
@@ -220,7 +308,19 @@ export async function workerCommand(terminal: TerminalAPI, args: string[]) {
     case 'delete':
       if (!args[1]) { terminal.print('Usage: worker delete <id>', 'error'); return; }
       await workerDelete(terminal, args[1]); break;
-    default: terminal.print('Usage: worker [list|add|get|delete]', 'error');
+    case 'env':
+      if (!args[1]) { terminal.print('Usage: worker env <id>', 'error'); return; }
+      await workerEnv(terminal, args[1]); break;
+    case 'env:set':
+      if (!args[1]) { terminal.print('Usage: worker env:set <id>', 'error'); return; }
+      await workerEnvSet(terminal, args[1]); break;
+    case 'secret':
+      if (!args[1]) { terminal.print('Usage: worker secret <id>', 'error'); return; }
+      await workerSecret(terminal, args[1]); break;
+    case 'secret:set':
+      if (!args[1]) { terminal.print('Usage: worker secret:set <id>', 'error'); return; }
+      await workerSecretSet(terminal, args[1]); break;
+    default: terminal.print('Usage: worker [list|add|get|delete|env|env:set|secret|secret:set]', 'error');
   }
 }
 

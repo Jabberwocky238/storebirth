@@ -92,6 +92,10 @@ export const workerAPI = {
   get: (id: string, offset?: number) => apiCall(`/api/worker/${id}${offset ? `?offset=${offset}` : ''}`, 'GET'),
   create: (worker_name: string) => apiCall('/api/worker', 'POST', { worker_name }),
   delete: (id: string) => apiCall(`/api/worker/${id}`, 'DELETE'),
+  getEnv: (id: string) => apiCall(`/api/worker/${id}/env`, 'GET'),
+  setEnv: (id: string, env: Record<string, string>) => apiCall(`/api/worker/${id}/env`, 'PUT', env),
+  getSecrets: (id: string) => apiCall(`/api/worker/${id}/secret`, 'GET'),
+  setSecrets: (id: string, secrets: Record<string, string>) => apiCall(`/api/worker/${id}/secret`, 'PUT', secrets),
 };
 
 export const domainAPI = {

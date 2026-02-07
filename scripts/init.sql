@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS workers (
     user_uid VARCHAR(64) NOT NULL,
     worker_id VARCHAR(16) UNIQUE NOT NULL,
     worker_name VARCHAR(255) NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'unloaded',
     active_version_id INTEGER,
     env_json TEXT NOT NULL DEFAULT '{}',
     secrets_json TEXT NOT NULL DEFAULT '[]',

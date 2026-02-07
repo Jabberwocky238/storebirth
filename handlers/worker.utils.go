@@ -19,10 +19,16 @@ func (h *WorkerHandler) process(t workerTask) {
 	case "sync_env":
 		if err := syncEnvToConfigMap(t.workerID, t.userUID, t.data); err != nil {
 			log.Printf("[worker] sync env configmap failed: %v", err)
+			dblayer.UpdateWorkerStatus(t.workerID, "error")
+		} else {
+			dblayer.UpdateWorkerStatus(t.workerID, "active")
 		}
 	case "sync_secret":
 		if err := syncSecretsToK8s(t.workerID, t.userUID, t.data); err != nil {
 			log.Printf("[worker] sync k8s secret failed: %v", err)
+			dblayer.UpdateWorkerStatus(t.workerID, "error")
+		} else {
+			dblayer.UpdateWorkerStatus(t.workerID, "active")
 		}
 	case "delete_cr":
 		deleteWorkerCR(t.workerID, t.userUID)
@@ -45,6 +51,7 @@ func (h *WorkerHandler) deploy(versionID int) {
 	if err != nil {
 		log.Printf("[worker] create CR for version %d failed: %v", versionID, err)
 		dblayer.UpdateDeployVersionStatus(versionID, "error", err.Error())
+		dblayer.UpdateWorkerStatus(v.WorkerID, "error")
 		return
 	}
 

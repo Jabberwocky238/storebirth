@@ -27,6 +27,10 @@ export function helpCommand(terminal: TerminalAPI) {
   terminal.print('  worker add              - Create a new worker');
   terminal.print('  worker get <id>         - Get worker details & versions');
   terminal.print('  worker delete <id>      - Delete a worker');
+  terminal.print('  worker env <id>         - Show worker env vars');
+  terminal.print('  worker env:set <id>     - Set worker env vars');
+  terminal.print('  worker secret <id>      - Show worker secret keys');
+  terminal.print('  worker secret:set <id>  - Set worker secrets');
   terminal.print('');
   terminal.print('  domain list             - List all custom domains');
   terminal.print('  domain add              - Add a new custom domain');

@@ -39,6 +39,7 @@ type Worker struct {
 	UserUID         string    `json:"user_uid"`
 	WorkerID        string    `json:"worker_id"`
 	WorkerName      string    `json:"worker_name"`
+	Status          string    `json:"status"` // unloaded, loading, active, error
 	ActiveVersionID *int      `json:"active_version_id"`
 	EnvJSON         string    `json:"env_json"`     // JSON object: {"KEY": "VALUE", ...}
 	SecretsJSON     string    `json:"secrets_json"`  // JSON array: ["secret1", "secret2", ...]
