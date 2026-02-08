@@ -1,14 +1,17 @@
-# version: 2026-multinode-8890
+# version: 2026-statefulset-dynamic-failover
+# 使用 StatefulSet + 自动清理机制，支持动态扩展副本数
+# 节点故障时自动清理 PVC，让 Pod 在新节点重建
+# 前置要求: kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
 apiVersion: v1
 kind: Namespace
 metadata:
   name: cockroachdb
 ---
-# Headless Service (必须保留，用于 Pod 间互相发现)
+# Headless Service (用于 Pod 间互相发现)
 apiVersion: v1
 kind: Service
 metadata:
-  name: cockroachdb-headless
+  name: cockroachdb
   namespace: cockroachdb
 spec:
   clusterIP: None
@@ -31,7 +34,6 @@ metadata:
   namespace: cockroachdb
 spec:
   type: ClusterIP
-  internalTrafficPolicy: Local
   selector:
     app: cockroachdb
   ports:
@@ -42,14 +44,16 @@ spec:
     port: 8080
     targetPort: 8080
 ---
+# StatefulSet
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: cockroachdb
   namespace: cockroachdb
 spec:
-  serviceName: cockroachdb-headless
+  serviceName: cockroachdb
   replicas: 3
+  podManagementPolicy: Parallel
   selector:
     matchLabels:
       app: cockroachdb
@@ -70,28 +74,42 @@ spec:
                   values:
                   - cockroachdb
               topologyKey: kubernetes.io/hostname
+      terminationGracePeriodSeconds: 60
       containers:
       - name: cockroachdb
         image: cockroachdb/cockroach:v23.2.0
         resources:
           requests:
-            cpu: "1"      
+            cpu: "1"
             memory: "2Gi"
           limits:
             cpu: "2"
             memory: "2Gi"
+        env:
+        - name: COCKROACH_CHANNEL
+          value: kubernetes-insecure
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
         command:
         - /bin/bash
         - -ecx
-        - >
-          exec /cockroach/cockroach start
-          --insecure
-          --advertise-host=$(hostname -f)
-          --http-addr=0.0.0.0
-          --join=cockroachdb-0.cockroachdb-headless.cockroachdb.svc.cluster.local,cockroachdb-1.cockroachdb-headless.cockroachdb.svc.cluster.local,cockroachdb-2.cockroachdb-headless.cockroachdb.svc.cluster.local
-          --cache=25%
-          --max-sql-memory=25%
-          --logtostderr
+        - |
+          exec /cockroach/cockroach start \
+            --insecure \
+            --advertise-host=${POD_NAME}.cockroachdb.cockroachdb.svc.cluster.local \
+            --http-addr=0.0.0.0 \
+            --join=cockroachdb-0.cockroachdb.cockroachdb.svc.cluster.local,cockroachdb-1.cockroachdb.cockroachdb.svc.cluster.local,cockroachdb-2.cockroachdb.cockroachdb.svc.cluster.local \
+            --locality=node=${POD_NAME} \
+            --cache=25% \
+            --max-sql-memory=25% \
+            --logtostderr
+        ports:
+        - containerPort: 26257
+          name: grpc
+        - containerPort: 8080
+          name: http
         volumeMounts:
         - name: datadir
           mountPath: /cockroach/cockroach-data
@@ -101,30 +119,20 @@ spec:
             port: 8080
           initialDelaySeconds: 15
           periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          failureThreshold: 3
   volumeClaimTemplates:
   - metadata:
       name: datadir
     spec:
+      storageClassName: local-path
       accessModes: ["ReadWriteOnce"]
       resources:
         requests:
-          storage: 100Gi
+          storage: 40Gi
 ---
-# 初始化 Job (只需要在集群创建时运行一次)
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: cockroachdb-init
-  namespace: cockroachdb
-spec:
-  template:
-    spec:
-      restartPolicy: OnFailure
-      containers:
-      - name: init
-        image: cockroachdb/cockroach:v23.2.0
-        command:
-        - /bin/bash
-        - -c
-        - |
-          /cockroach/cockroach init --insecure --host=cockroachdb-0.cockroachdb-headless.cockroachdb.svc.cluster.local

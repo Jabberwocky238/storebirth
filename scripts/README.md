@@ -50,6 +50,8 @@ kubectl exec -it cockroachdb-0 -n cockroachdb -- /cockroach/cockroach sql --inse
 \dt *.*: 查看所有 Schema 下的所有表。
 \dt myschema.*: 查看指定 Schema 下的所有表。
 
+kubectl delete deployment -n combinator --all 
+kubectl delete deployment -n worker --all     
 kubectl delete pod -l app=<label> -n console
 
 # Or delete by namespace
