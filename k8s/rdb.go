@@ -17,22 +17,131 @@ type RootRDBManager struct {
 	rootDB  *sql.DB
 	rootDSN string
 
+	userMgr *userDBManager
+}
+
+// userDBManager manages user database connection pool
+type userDBManager struct {
+	mu      sync.RWMutex
 	userDBs map[string]*userDBEntry
 	lruList *list.List
 }
 
 type userDBEntry struct {
-	sync.RWMutex
+	mu      sync.RWMutex
 	db      *sql.DB
 	element *list.Element
 }
 
+func newUserDBManager() *userDBManager {
+	return &userDBManager{
+		userDBs: make(map[string]*userDBEntry, UserDBPoolSize),
+		lruList: list.New(),
+	}
+}
+
 func (e *userDBEntry) close() {
-	e.Lock()
-	defer e.Unlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	if e.db != nil {
 		e.db.Close()
 		e.db = nil
+	}
+}
+
+func (e *userDBEntry) getDB() *sql.DB {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.db
+}
+
+// getOrCreateUserDB returns a healthy user *sql.DB from pool, reconnecting if needed
+func (mgr *userDBManager) getOrCreateUserDB(userUID string) (*sql.DB, *userRDB, error) {
+	userRDB := newUserRDB(userUID)
+
+	// Fast path: try to get existing connection with read lock
+	mgr.mu.RLock()
+	entry, exists := mgr.userDBs[userUID]
+	mgr.mu.RUnlock()
+
+	if exists {
+		// Check connection health outside manager lock
+		db := entry.getDB()
+		if db != nil {
+			if db.Ping() == nil {
+				// Connection is healthy, update LRU with write lock
+				mgr.mu.Lock()
+				mgr.lruList.MoveToFront(entry.element)
+				mgr.mu.Unlock()
+				return db, userRDB, nil
+			}
+			// Connection exists but unhealthy
+			log.Printf("[rdb] user %s connection lost, reconnecting...", userUID)
+		}
+		// db == nil means connection is being closed or not initialized, fall through to slow path
+	}
+
+	// Slow path: need to create/reconnect, acquire write lock
+	mgr.mu.Lock()
+	defer mgr.mu.Unlock()
+
+	// Double check after acquiring write lock
+	if entry, exists := mgr.userDBs[userUID]; exists {
+		db := entry.getDB()
+		if db != nil && db.Ping() == nil {
+			mgr.lruList.MoveToFront(entry.element)
+			return db, userRDB, nil
+		}
+		// Clean up dead connection
+		entry.close()
+		mgr.lruList.Remove(entry.element)
+		delete(mgr.userDBs, userUID)
+	}
+
+	// Evict oldest connection if pool is full (LRU)
+	if len(mgr.userDBs) >= UserDBPoolSize {
+		oldest := mgr.lruList.Back()
+		if oldest != nil {
+			oldUID := oldest.Value.(string)
+			if entry, exists := mgr.userDBs[oldUID]; exists {
+				entry.close()
+				delete(mgr.userDBs, oldUID)
+			}
+			mgr.lruList.Remove(oldest)
+			log.Printf("[rdb] evicted LRU user connection: %s", oldUID)
+		}
+	}
+
+	// Try to connect
+	for i := 0; i < 3; i++ {
+		db, err := sql.Open("postgres", userRDB.dsn())
+		if err != nil {
+			return nil, nil, fmt.Errorf("sql.Open failed: %w", err)
+		}
+		if err := db.Ping(); err != nil {
+			log.Printf("[rdb] user %s ping attempt %d/3 failed: %v", userUID, i+1, err)
+			db.Close()
+			continue
+		}
+		log.Printf("[rdb] user %s connected on attempt %d/3", userUID, i+1)
+
+		// Add to LRU cache
+		element := mgr.lruList.PushFront(userUID)
+		mgr.userDBs[userUID] = &userDBEntry{
+			db:      db,
+			element: element,
+		}
+		return db, userRDB, nil
+	}
+	return nil, nil, fmt.Errorf("user db unreachable after 3 attempts")
+}
+
+// closeAll closes all user connections
+func (mgr *userDBManager) closeAll() {
+	mgr.mu.Lock()
+	defer mgr.mu.Unlock()
+	for _, entry := range mgr.userDBs {
+		entry.close()
 	}
 }
 
@@ -43,8 +152,7 @@ var (
 func InitRDBManager() error {
 	RDBManager = &RootRDBManager{
 		rootDSN: CockroachDBAdminDSN,
-		userDBs: make(map[string]*userDBEntry, UserDBPoolSize),
-		lruList: list.New(),
+		userMgr: newUserDBManager(),
 	}
 	_, err := RDBManager.tryGetRootDB()
 	return err
@@ -52,9 +160,22 @@ func InitRDBManager() error {
 
 // tryGetRootDB returns a healthy root *sql.DB, reconnecting if needed (up to 3 attempts)
 func (m *RootRDBManager) tryGetRootDB() (*sql.DB, error) {
+	// Fast path: try read lock first
+	m.rootmu.RLock()
+	if m.rootDB != nil {
+		if err := m.rootDB.Ping(); err == nil {
+			db := m.rootDB
+			m.rootmu.RUnlock()
+			return db, nil
+		}
+	}
+	m.rootmu.RUnlock()
+
+	// Slow path: need to reconnect, acquire write lock
 	m.rootmu.Lock()
 	defer m.rootmu.Unlock()
 
+	// Double check after acquiring write lock
 	if m.rootDB != nil {
 		if err := m.rootDB.Ping(); err == nil {
 			return m.rootDB, nil
@@ -63,6 +184,7 @@ func (m *RootRDBManager) tryGetRootDB() (*sql.DB, error) {
 		m.rootDB.Close()
 		m.rootDB = nil
 	}
+
 	for i := 0; i < 3; i++ {
 		db, err := sql.Open("postgres", m.rootDSN)
 		if err != nil {
@@ -82,70 +204,19 @@ func (m *RootRDBManager) tryGetRootDB() (*sql.DB, error) {
 
 // tryGetUserDB returns a healthy user *sql.DB from pool, reconnecting if needed
 func (m *RootRDBManager) tryGetUserDB(userUID string) (*sql.DB, *userRDB, error) {
-	// Build user DSN
-	userRDB := newUserRDB(userUID)
-
-	if entry, exists := m.userDBs[userUID]; exists {
-		entry.RLock()
-		defer entry.RUnlock()
-		if err := entry.db.Ping(); err == nil {
-			// Move to front (most recently used)
-			m.lruList.MoveToFront(entry.element)
-			return entry.db, userRDB, nil
-		}
-		log.Printf("[rdb] user %s connection lost, reconnecting...", userUID)
-		entry.close()
-	}
-
-	// Evict oldest connection if pool is full (LRU)
-	if len(m.userDBs) >= UserDBPoolSize {
-		oldest := m.lruList.Back()
-		if oldest != nil {
-			oldUID := oldest.Value.(string)
-			if entry, exists := m.userDBs[oldUID]; exists {
-				entry.close()
-				delete(m.userDBs, oldUID)
-			}
-			m.lruList.Remove(oldest)
-			log.Printf("[rdb] evicted LRU user connection: %s", oldUID)
-		}
-	}
-
-	// Try to connect
-	for i := 0; i < 3; i++ {
-		db, err := sql.Open("postgres", userRDB.dsn())
-		if err != nil {
-			return nil, nil, fmt.Errorf("sql.Open failed: %w", err)
-		}
-		if err := db.Ping(); err != nil {
-			log.Printf("[rdb] user %s ping attempt %d/3 failed: %v", userUID, i+1, err)
-			db.Close()
-			continue
-		}
-		log.Printf("[rdb] user %s connected on attempt %d/3", userUID, i+1)
-
-		// Add to LRU cache
-		element := m.lruList.PushFront(userUID)
-		m.userDBs[userUID] = &userDBEntry{
-			db:      db,
-			element: element,
-		}
-		return db, userRDB, nil
-	}
-	return nil, nil, fmt.Errorf("user db unreachable after 3 attempts")
+	return m.userMgr.getOrCreateUserDB(userUID)
 }
 
 // Close closes the persistent admin connection
 func (m *RootRDBManager) Close() error {
 	m.rootmu.Lock()
-	defer m.rootmu.Unlock()
-
 	if m.rootDB != nil {
-		return m.rootDB.Close()
+		m.rootDB.Close()
 	}
-	for _, entry := range m.userDBs {
-		entry.close()
-	}
+	m.rootmu.Unlock()
+
+	m.userMgr.closeAll()
+
 	return nil
 }
 
@@ -192,10 +263,6 @@ func (m *RootRDBManager) DSNWithSchema(userUID, schemaID string) string {
 // DatabaseName returns db_<uid> (exported for external use)
 func (m *RootRDBManager) DatabaseName(userUID string) string {
 	return newUserRDB(userUID).database()
-}
-
-func (m *RootRDBManager) useDB(userUID string) string {
-	return fmt.Sprintf("SET DATABASE = %s", newUserRDB(userUID).database())
 }
 
 // CreateSchema creates a new schema in user's database
@@ -259,8 +326,6 @@ func (m *RootRDBManager) SchemaExists(userUID, schemaID string) (bool, error) {
 
 // InitUserRDB creates user and database for new user
 func (m *RootRDBManager) InitUserRDB(userUID string) error {
-	m.rootmu.Lock()
-	defer m.rootmu.Unlock()
 	db, err := m.tryGetRootDB()
 	if err != nil {
 		return err
@@ -343,9 +408,6 @@ WHERE db.name = $1
 
 // DatabaseSize returns total size of user's database in bytes
 func (m *RootRDBManager) DatabaseSize(userUID string) (int64, error) {
-	m.rootmu.RLock()
-	defer m.rootmu.RUnlock()
-
 	db, err := m.tryGetRootDB()
 	if err != nil {
 		return 0, err
@@ -414,9 +476,6 @@ type schemaSizeResult struct {
 
 // SchemaSize returns total size of a specific schema in bytes
 func (m *RootRDBManager) SchemaSize(userUID, schemaID string) (int64, error) {
-	m.rootmu.RLock()
-	defer m.rootmu.RUnlock()
-
 	db, err := m.tryGetRootDB()
 	if err != nil {
 		return 0, err
@@ -449,7 +508,7 @@ WHERE db.name = $1
 ORDER BY schema_name, table_name;
 `
 
-func (m *RootRDBManager) forceAnalyze(userUID string) error {
+func (m *RootRDBManager) ForceAnalyze(userUID string) error {
 	rootdb, err := m.tryGetRootDB()
 	if err != nil {
 		return err
