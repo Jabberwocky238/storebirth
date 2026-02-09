@@ -1,0 +1,296 @@
+# Combinator K3s Deployment
+# 包含: Namespace, PostgreSQL, Redis, Combinator 应用及其配置
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: combinator
+  labels:
+    name: combinator
+
+---
+# PostgreSQL Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-secret
+  namespace: combinator
+type: Opaque
+stringData:
+  POSTGRES_USER: combine1
+  POSTGRES_PASSWORD: combine1
+  POSTGRES_DB: postgres
+
+---
+# PostgreSQL 初始化脚本
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: combinator
+data:
+  init.sql: |
+    CREATE DATABASE combine1db;
+    \c combine1db;
+
+    -- 示例表
+    CREATE TABLE IF NOT EXISTS longlivecombinator (
+      id SERIAL PRIMARY KEY,
+      whoami VARCHAR(50),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- 插入测试数据
+    INSERT INTO longlivecombinator (whoami) VALUES
+      ('vector'),
+      ('slico'),
+      ('jinx');
+
+---
+# PostgreSQL PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: combinator
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+# PostgreSQL Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: combinator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_PASSWORD
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_DB
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+        - name: init-script
+          mountPath: /docker-entrypoint-initdb.d
+      volumes:
+      - name: postgres-storage
+        persistentVolumeClaim:
+          claimName: postgres-pvc
+      - name: init-script
+        configMap:
+          name: postgres-init
+
+---
+# PostgreSQL Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: combinator
+spec:
+  selector:
+    app: postgres
+  ports:
+  - port: 5432
+    targetPort: 5432
+  type: ClusterIP
+
+---
+# Redis PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-pvc
+  namespace: combinator
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 500Mi
+
+---
+# Redis Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: combinator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+        lifecycle:
+          postStart:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - |
+                sleep 3
+                redis-cli SET MOTO "拨得云开见月明"
+        volumeMounts:
+        - name: redis-storage
+          mountPath: /data
+      volumes:
+      - name: redis-storage
+        persistentVolumeClaim:
+          claimName: redis-pvc
+
+---
+# Redis Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: combinator
+spec:
+  selector:
+    app: redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+  type: ClusterIP
+
+---
+# Combinator ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: combinator-config
+  namespace: combinator
+data:
+  config.json: |
+    {
+      "rdb": [
+        {
+          "id": "0",
+          "enabled": true,
+          "url": "sqlite://:memory:"
+        },
+        {
+          "id": "1",
+          "enabled": true,
+          "url": "postgres://combine1:combine1@postgres:5432/combine1db"
+        }
+      ],
+      "kv": [
+        {
+          "id": "0",
+          "enabled": true,
+          "url": "memory://"
+        },
+        {
+          "id": "1",
+          "enabled": true,
+          "url": "redis://redis:6379/0"
+        }
+      ]
+    }
+
+---
+# Combinator Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: combinator
+  namespace: combinator
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: combinator
+  template:
+    metadata:
+      labels:
+        app: combinator
+    spec:
+      containers:
+      - name: combinator
+        image: ghcr.io/jabberwocky238/combinator:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8899
+        args:
+        - "start"
+        - "-c"
+        - "/config/config.json"
+        - "-l"
+        - "0.0.0.0:8899"
+        volumeMounts:
+        - name: config
+          mountPath: /config
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8899
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8899
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: config
+        configMap:
+          name: combinator-config
+
+---
+# Combinator Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: combinator
+  namespace: combinator
+spec:
+  selector:
+    app: combinator
+  ports:
+  - port: 8899
+    targetPort: 8899
+  type: ClusterIP

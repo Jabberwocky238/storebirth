@@ -44,23 +44,6 @@ func (j *CreateRDBJob) Do() error {
 		return fmt.Errorf("create schema: %w", err)
 	}
 
-	cfg, err := controller.GetCombinatorConfig(k8s.DynamicClient, j.UserUID)
-	if err != nil {
-		dblayer.UpdateCombinatorResourceStatus(j.RecordID, "error", err.Error())
-		return fmt.Errorf("get combinator config: %w", err)
-	}
-
-	cfg.RDBs = append(cfg.RDBs, controller.RDBItem{
-		ID:   j.ResourceID,
-		Name: j.Name,
-		URL:  k8s.RDBManager.DSNWithSchema(j.UserUID, j.ResourceID),
-	})
-
-	if err := controller.UpdateCombinatorConfig(k8s.DynamicClient, j.UserUID, cfg); err != nil {
-		dblayer.UpdateCombinatorResourceStatus(j.RecordID, "error", err.Error())
-		return fmt.Errorf("update CR config: %w", err)
-	}
-
 	dblayer.UpdateCombinatorResourceStatus(j.RecordID, "active", "")
 	log.Printf("[combinator] RDB %s created for user %s", j.ResourceID, j.UserUID)
 	return nil
@@ -87,22 +70,6 @@ func (j *DeleteRDBJob) Do() error {
 		}
 	}
 
-	cfg, err := controller.GetCombinatorConfig(k8s.DynamicClient, j.UserUID)
-	if err != nil {
-		return fmt.Errorf("get combinator config: %w", err)
-	}
-
-	for i, rdb := range cfg.RDBs {
-		if rdb.ID == j.ResourceID {
-			cfg.RDBs = append(cfg.RDBs[:i], cfg.RDBs[i+1:]...)
-			break
-		}
-	}
-
-	if err := controller.UpdateCombinatorConfig(k8s.DynamicClient, j.UserUID, cfg); err != nil {
-		return fmt.Errorf("update CR config: %w", err)
-	}
-
 	log.Printf("[combinator] RDB %s deleted for user %s", j.ResourceID, j.UserUID)
 	return nil
 }
@@ -123,7 +90,6 @@ func NewCreateKVJob(recordID, userUID, resourceID, kvType, kvURL string) *Create
 		UserUID:    userUID,
 		ResourceID: resourceID,
 		KVType:     kvType,
-		KVURL:      kvURL,
 	}
 }
 
@@ -131,23 +97,6 @@ func (j *CreateKVJob) Type() string { return "combinator.create_kv" }
 func (j *CreateKVJob) ID() string   { return j.RecordID }
 
 func (j *CreateKVJob) Do() error {
-	cfg, err := controller.GetCombinatorConfig(k8s.DynamicClient, j.UserUID)
-	if err != nil {
-		dblayer.UpdateCombinatorResourceStatus(j.RecordID, "error", err.Error())
-		return fmt.Errorf("get combinator config: %w", err)
-	}
-
-	cfg.KVs = append(cfg.KVs, controller.KVItem{
-		ID:   j.ResourceID,
-		Type: j.KVType,
-		URL:  j.KVURL,
-	})
-
-	if err := controller.UpdateCombinatorConfig(k8s.DynamicClient, j.UserUID, cfg); err != nil {
-		dblayer.UpdateCombinatorResourceStatus(j.RecordID, "error", err.Error())
-		return fmt.Errorf("update CR config: %w", err)
-	}
-
 	dblayer.UpdateCombinatorResourceStatus(j.RecordID, "active", "")
 	log.Printf("[combinator] KV %s created for user %s", j.ResourceID, j.UserUID)
 	return nil
@@ -168,22 +117,7 @@ func (j *DeleteKVJob) Type() string { return "combinator.delete_kv" }
 func (j *DeleteKVJob) ID() string   { return j.ResourceID }
 
 func (j *DeleteKVJob) Do() error {
-	cfg, err := controller.GetCombinatorConfig(k8s.DynamicClient, j.UserUID)
-	if err != nil {
-		return fmt.Errorf("get combinator config: %w", err)
-	}
-
-	for i, kv := range cfg.KVs {
-		if kv.ID == j.ResourceID {
-			cfg.KVs = append(cfg.KVs[:i], cfg.KVs[i+1:]...)
-			break
-		}
-	}
-
-	if err := controller.UpdateCombinatorConfig(k8s.DynamicClient, j.UserUID, cfg); err != nil {
-		return fmt.Errorf("update CR config: %w", err)
-	}
-
+	
 	log.Printf("[combinator] KV %s deleted for user %s", j.ResourceID, j.UserUID)
 	return nil
 }

@@ -18,16 +18,14 @@ import (
 )
 
 type Controller struct {
-	client     dynamic.Interface
-	k8sClient  *kubernetes.Clientset
-	worker     *WorkerController
-	combinator *CombinatorController
+	client    dynamic.Interface
+	k8sClient *kubernetes.Clientset
+	worker    *WorkerController
 }
 
 func NewController(client dynamic.Interface, k8sClient *kubernetes.Clientset) *Controller {
 	c := &Controller{client: client, k8sClient: k8sClient}
 	c.worker = &WorkerController{ctrl: c}
-	c.combinator = &CombinatorController{ctrl: c}
 	return c
 }
 
@@ -72,38 +70,13 @@ func (c *Controller) Start(stopCh <-chan struct{}) {
 		DeleteFunc: c.worker.onSubResourceDelete,
 	})
 
-	// 4. CombinatorApp CR informer: watch CombinatorApp in combinator namespace
-	combinatorDynFactory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(
-		c.client, 30*time.Second, k8s.CombinatorNamespace, nil,
-	)
-	combinatorCrInformer := combinatorDynFactory.ForResource(CombinatorAppGVR).Informer()
-	c.combinator.crCache = combinatorCrInformer.GetStore()
-
-	combinatorCrInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    c.combinator.onAdd,
-		UpdateFunc: c.combinator.onUpdate,
-		DeleteFunc: c.combinator.onDelete,
-	})
-
-	// 5. Sub-resource informer for combinator namespace
-	combinatorK8sFactory := informers.NewSharedInformerFactoryWithOptions(
-		c.k8sClient, 30*time.Second,
-		informers.WithNamespace(k8s.CombinatorNamespace),
-	)
-	combinatorSubHandler := cache.ResourceEventHandlerFuncs{
-		DeleteFunc: c.combinator.onSubResourceDelete,
-	}
-	combinatorK8sFactory.Apps().V1().Deployments().Informer().AddEventHandler(combinatorSubHandler)
-	combinatorK8sFactory.Core().V1().Services().Informer().AddEventHandler(combinatorSubHandler)
 
 	log.Println("[controller] starting informers")
 	go dynFactory.Start(stopCh)
 	go k8sFactory.Start(stopCh)
 	go ingressDynFactory.Start(stopCh)
-	go combinatorDynFactory.Start(stopCh)
-	go combinatorK8sFactory.Start(stopCh)
 
-	if !cache.WaitForCacheSync(stopCh, crInformer.HasSynced, combinatorCrInformer.HasSynced) {
+	if !cache.WaitForCacheSync(stopCh, crInformer.HasSynced) {
 		log.Println("[controller] failed to sync CR informer cache")
 		return
 	}
