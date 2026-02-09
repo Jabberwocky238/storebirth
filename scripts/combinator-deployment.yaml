@@ -1,5 +1,5 @@
 # Combinator K3s Deployment
-# 包含: Namespace, PostgreSQL, Redis, Combinator 应用及其配置
+# 无状态应用，5 个副本，尽可能分散部署
 
 ---
 apiVersion: v1
@@ -8,192 +8,6 @@ metadata:
   name: combinator
   labels:
     name: combinator
-
----
-# PostgreSQL Secret
-apiVersion: v1
-kind: Secret
-metadata:
-  name: postgres-secret
-  namespace: combinator
-type: Opaque
-stringData:
-  POSTGRES_USER: combine1
-  POSTGRES_PASSWORD: combine1
-  POSTGRES_DB: postgres
-
----
-# PostgreSQL 初始化脚本
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: postgres-init
-  namespace: combinator
-data:
-  init.sql: |
-    CREATE DATABASE combine1db;
-    \c combine1db;
-
-    -- 示例表
-    CREATE TABLE IF NOT EXISTS longlivecombinator (
-      id SERIAL PRIMARY KEY,
-      whoami VARCHAR(50),
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-
-    -- 插入测试数据
-    INSERT INTO longlivecombinator (whoami) VALUES
-      ('vector'),
-      ('slico'),
-      ('jinx');
-
----
-# PostgreSQL PVC
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: postgres-pvc
-  namespace: combinator
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
-
----
-# PostgreSQL Deployment
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: postgres
-  namespace: combinator
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: postgres
-  template:
-    metadata:
-      labels:
-        app: postgres
-    spec:
-      containers:
-      - name: postgres
-        image: postgres:15-alpine
-        ports:
-        - containerPort: 5432
-        env:
-        - name: POSTGRES_USER
-          valueFrom:
-            secretKeyRef:
-              name: postgres-secret
-              key: POSTGRES_USER
-        - name: POSTGRES_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: postgres-secret
-              key: POSTGRES_PASSWORD
-        - name: POSTGRES_DB
-          valueFrom:
-            secretKeyRef:
-              name: postgres-secret
-              key: POSTGRES_DB
-        volumeMounts:
-        - name: postgres-storage
-          mountPath: /var/lib/postgresql/data
-        - name: init-script
-          mountPath: /docker-entrypoint-initdb.d
-      volumes:
-      - name: postgres-storage
-        persistentVolumeClaim:
-          claimName: postgres-pvc
-      - name: init-script
-        configMap:
-          name: postgres-init
-
----
-# PostgreSQL Service
-apiVersion: v1
-kind: Service
-metadata:
-  name: postgres
-  namespace: combinator
-spec:
-  selector:
-    app: postgres
-  ports:
-  - port: 5432
-    targetPort: 5432
-  type: ClusterIP
-
----
-# Redis PVC
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: redis-pvc
-  namespace: combinator
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 500Mi
-
----
-# Redis Deployment
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: redis
-  namespace: combinator
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: redis
-  template:
-    metadata:
-      labels:
-        app: redis
-    spec:
-      containers:
-      - name: redis
-        image: redis:7-alpine
-        ports:
-        - containerPort: 6379
-        lifecycle:
-          postStart:
-            exec:
-              command:
-              - /bin/sh
-              - -c
-              - |
-                sleep 3
-                redis-cli SET MOTO "拨得云开见月明"
-        volumeMounts:
-        - name: redis-storage
-          mountPath: /data
-      volumes:
-      - name: redis-storage
-        persistentVolumeClaim:
-          claimName: redis-pvc
-
----
-# Redis Service
-apiVersion: v1
-kind: Service
-metadata:
-  name: redis
-  namespace: combinator
-spec:
-  selector:
-    app: redis
-  ports:
-  - port: 6379
-    targetPort: 6379
-  type: ClusterIP
 
 ---
 # Combinator ConfigMap
@@ -205,30 +19,8 @@ metadata:
 data:
   config.json: |
     {
-      "rdb": [
-        {
-          "id": "0",
-          "enabled": true,
-          "url": "sqlite://:memory:"
-        },
-        {
-          "id": "1",
-          "enabled": true,
-          "url": "postgres://combine1:combine1@postgres:5432/combine1db"
-        }
-      ],
-      "kv": [
-        {
-          "id": "0",
-          "enabled": true,
-          "url": "memory://"
-        },
-        {
-          "id": "1",
-          "enabled": true,
-          "url": "redis://redis:6379/0"
-        }
-      ]
+      "rdb": [],
+      "kv": []
     }
 
 ---
@@ -239,7 +31,7 @@ metadata:
   name: combinator
   namespace: combinator
 spec:
-  replicas: 2
+  replicas: 5
   selector:
     matchLabels:
       app: combinator
@@ -248,12 +40,38 @@ spec:
       labels:
         app: combinator
     spec:
+      # Pod 反亲和性配置 - 尽可能分散到不同节点
+      affinity:
+        podAntiAffinity:
+          # 优先级调度：尽量不在同一节点
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - combinator
+                topologyKey: kubernetes.io/hostname
+          # 如果需要强制分散（节点数>=5时），可以取消下面的注释
+          # requiredDuringSchedulingIgnoredDuringExecution:
+          #   - labelSelector:
+          #       matchExpressions:
+          #         - key: app
+          #           operator: In
+          #           values:
+          #             - combinator
+          #     topologyKey: kubernetes.io/hostname
       containers:
       - name: combinator
         image: ghcr.io/jabberwocky238/combinator:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8899
+          name: http
+        - containerPort: 8890
+          name: webhook
         args:
         - "start"
         - "-c"
@@ -263,18 +81,29 @@ spec:
         volumeMounts:
         - name: config
           mountPath: /config
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
         livenessProbe:
           httpGet:
             path: /health
-            port: 8899
+            port: 8890
           initialDelaySeconds: 10
           periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
         readinessProbe:
           httpGet:
             path: /health
             port: 8899
           initialDelaySeconds: 5
           periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
       volumes:
       - name: config
         configMap:
@@ -291,6 +120,10 @@ spec:
   selector:
     app: combinator
   ports:
-  - port: 8899
+  - name: http
+    port: 8899
     targetPort: 8899
+  - name: webhook
+    port: 8890
+    targetPort: 8890
   type: ClusterIP

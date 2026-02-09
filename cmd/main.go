@@ -182,6 +182,7 @@ func main() {
 		// Internal routes (no auth required, only accessible from cluster)
 		internalAPI.POST("/worker/deploy", wh.DeployWorker)
 		internalAPI.GET("/combinator/retrieveSecretByID", cih.RetrieveSecretByID)
+		internalAPI.POST("/combinator/reportUsage", cih.ReportUsage)
 	}
 
 	// 6. External HTTP Server
