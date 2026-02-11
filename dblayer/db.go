@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"os"
 
 	_ "github.com/lib/pq"
 )
@@ -21,22 +20,5 @@ func InitDB(dsn string) error {
 		return fmt.Errorf("Connection err: %s", err.Error())
 	}
 
-	if err := DB.Ping(); err != nil {
-		return err
-	}
-
-	// Create tables if they don't exist
-	return createTables()
-}
-
-// createTables creates all necessary database tables
-func createTables() error {
-	// Read SQL file
-	sqlBytes, err := os.ReadFile("scripts/init.sql")
-	if err != nil {
-		return err
-	}
-
-	_, err = DB.Exec(string(sqlBytes))
-	return err
+	return DB.Ping()
 }

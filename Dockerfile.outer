@@ -24,7 +24,6 @@ RUN apk --no-cache add ca-certificates
 WORKDIR /app
 
 COPY --from=builder /app/outer-gateway .
-COPY --from=builder /app/scripts/init.sql ./scripts/
 COPY --from=frontend /app/web/dist ./dist/
 
 EXPOSE 9900
