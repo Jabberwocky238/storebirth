@@ -8,11 +8,9 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"jabberwocky238/console/dblayer"
 	"jabberwocky238/console/handlers"
-	"jabberwocky238/console/handlers/jobs"
 	"jabberwocky238/console/k8s"
 	"jabberwocky238/console/k8s/controller"
 
@@ -57,21 +55,8 @@ func main() {
 		go ctrl.Start(stopCh)
 	}
 
-	// 4. Processor
-	proc := k8s.NewProcessor(256, 4)
-	proc.Start()
-	defer proc.Close()
-
 	wh := handlers.NewWorkerHandler()
 	ch := handlers.NewCombinatorHandler()
-
-	// 5. Cron
-	cron := k8s.NewCronScheduler(proc)
-	cron.RegisterJob(24*time.Hour, jobs.NewUserAuditJob())
-	cron.RegisterJob(12*time.Hour, jobs.NewDomainCheckJob())
-	proc.Submit(jobs.NewUserAuditJob())
-	cron.Start()
-	defer cron.Close()
 
 	log.Println("Outer gateway starting...")
 
@@ -152,16 +137,18 @@ func checkEnv() {
 	var shouldPanic bool = false
 	requiredEnvs := []string{"DOMAIN", "RESEND_API_KEY"}
 	for _, env := range requiredEnvs {
-		if os.Getenv(env) == "" {
+		thisVar := os.Getenv(env)
+		if thisVar == "" {
 			log.Printf("Environment variable %s is required but not set", env)
 			shouldPanic = true
+			continue
 		} else {
 			log.Printf("Environment variable %s is set", env)
 			switch env {
 			case "DOMAIN":
-				k8s.Domain = os.Getenv(env)
+				k8s.Domain = thisVar
 			case "RESEND_API_KEY":
-				handlers.RESEND_API_KEY = os.Getenv(env)
+				handlers.RESEND_API_KEY = thisVar
 				handlers.ResendClient = resend.NewClient(handlers.RESEND_API_KEY)
 			}
 		}

@@ -8,9 +8,11 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"jabberwocky238/console/dblayer"
 	"jabberwocky238/console/handlers"
+	"jabberwocky238/console/handlers/jobs"
 	"jabberwocky238/console/k8s"
 
 	"github.com/gin-gonic/gin"
@@ -40,6 +42,10 @@ func main() {
 	cron.Start()
 	defer proc.Close()
 	defer cron.Close()
+
+	cron.RegisterJob(24*time.Hour, jobs.NewUserAuditJob())
+	cron.RegisterJob(12*time.Hour, jobs.NewDomainCheckJob())
+	proc.Submit(jobs.NewUserAuditJob())
 
 	wh := handlers.NewWorkerHandler()
 	cih := handlers.NewCombinatorInternalHandler(proc)
