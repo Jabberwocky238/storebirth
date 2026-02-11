@@ -14,6 +14,7 @@ import (
 	"jabberwocky238/console/handlers"
 	"jabberwocky238/console/handlers/jobs"
 	"jabberwocky238/console/k8s"
+	"jabberwocky238/console/k8s/controller"
 
 	"github.com/gin-gonic/gin"
 )
@@ -21,19 +22,35 @@ import (
 func main() {
 	listen := flag.String("l", "0.0.0.0:9901", "Internal listen address")
 	dbDSN := flag.String("d", "postgresql://myuser:your_password@localhost:5432/mydb?sslmode=disable", "Database DSN")
+	kubeconfig := flag.String("k", "", "Kubeconfig path (empty for in-cluster)")
 	flag.Parse()
 
 	// 1. Database
 	if err := dblayer.InitDB(*dbDSN); err != nil {
-		log.Fatal("Failed to connect to database:", err)
+		log.Fatalf("Failed to connect to database: %v", err)
+		panic("Failed to connect to database:" + err.Error())
 	}
 	defer dblayer.DB.Close()
 
 	// 2. CockroachDB
 	if err := k8s.InitRDBManager(); err != nil {
+		log.Fatalf("CockroachDB init failed: %v", err)
 		panic("CockroachDB init failed: " + err.Error())
 	}
 	defer k8s.RDBManager.Close()
+
+	// 3. K8s + Controller
+	if err := k8s.InitK8s(*kubeconfig); err != nil {
+		log.Printf("Warning: K8s client init failed: %v", err)
+		panic("K8s client init failed: " + err.Error())
+	} else {
+		log.Println("K8s client initialized")
+		controller.EnsureCRD(k8s.RestConfig)
+		stopCh := make(chan struct{})
+		defer close(stopCh)
+		ctrl := controller.NewController(k8s.DynamicClient, k8s.K8sClient)
+		go ctrl.Start(stopCh)
+	}
 
 	// 3. Processor
 	proc := k8s.NewProcessor(256, 4)

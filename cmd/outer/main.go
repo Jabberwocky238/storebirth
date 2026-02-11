@@ -12,7 +12,6 @@ import (
 	"jabberwocky238/console/dblayer"
 	"jabberwocky238/console/handlers"
 	"jabberwocky238/console/k8s"
-	"jabberwocky238/console/k8s/controller"
 
 	"github.com/gin-gonic/gin"
 	"github.com/resend/resend-go/v3"
@@ -21,11 +20,11 @@ import (
 func main() {
 	listen := flag.String("l", "0.0.0.0:9900", "External listen address")
 	dbDSN := flag.String("d", "postgresql://myuser:your_password@localhost:5432/mydb?sslmode=disable", "Database DSN")
-	kubeconfig := flag.String("k", "", "Kubeconfig path (empty for in-cluster)")
+
 	flag.Parse()
 	debug := os.Getenv("ENV") == "test"
 	if debug {
-		checkEnv()
+		checkEnvOuter()
 	}
 
 	// 1. Database
@@ -41,19 +40,6 @@ func main() {
 		panic("CockroachDB init failed: " + err.Error())
 	}
 	defer k8s.RDBManager.Close()
-
-	// 3. K8s + Controller
-	if err := k8s.InitK8s(*kubeconfig); err != nil && !debug {
-		log.Printf("Warning: K8s client init failed: %v", err)
-		panic("K8s client init failed: " + err.Error())
-	} else {
-		log.Println("K8s client initialized")
-		controller.EnsureCRD(k8s.RestConfig)
-		stopCh := make(chan struct{})
-		defer close(stopCh)
-		ctrl := controller.NewController(k8s.DynamicClient, k8s.K8sClient)
-		go ctrl.Start(stopCh)
-	}
 
 	wh := handlers.NewWorkerHandler()
 	ch := handlers.NewCombinatorHandler()
@@ -133,7 +119,7 @@ func main() {
 	srv.Shutdown(context.Background())
 }
 
-func checkEnv() {
+func checkEnvOuter() {
 	var shouldPanic bool = false
 	requiredEnvs := []string{"DOMAIN", "RESEND_API_KEY"}
 	for _, env := range requiredEnvs {
