@@ -26,16 +26,15 @@ func (h *CombinatorHandler) CreateRDB(c *gin.Context) {
 		return
 	}
 
-	id := GenerateResourceUID()
 	resourceID := GenerateResourceUID()
-	if err := dblayer.CreateCombinatorResource(id, userUID, "rdb", resourceID); err != nil {
+	if err := dblayer.CreateCombinatorResource(userUID, "rdb", resourceID); err != nil {
 		c.JSON(500, gin.H{"error": "failed to create resource: " + err.Error()})
 		return
 	}
 
-	h.proc.Submit(NewCreateRDBJob(id, userUID, req.Name, resourceID))
+	h.proc.Submit(NewCreateRDBJob(userUID, req.Name, resourceID))
 
-	c.JSON(200, gin.H{"id": id, "status": "loading"})
+	c.JSON(200, gin.H{"id": resourceID, "status": "loading"})
 }
 
 // ListRDBs lists all RDB resources for user from database
@@ -59,15 +58,11 @@ func (h *CombinatorHandler) ListRDBs(c *gin.Context) {
 // GetRDB returns detail of a single RDB resource including schema size
 func (h *CombinatorHandler) GetRDB(c *gin.Context) {
 	userUID := c.GetString("user_id")
-	id := c.Param("id")
+	resourceID := c.Param("id")
 
-	cr, err := dblayer.GetCombinatorResource(id)
+	cr, err := dblayer.GetCombinatorResource(userUID, "rdb", resourceID)
 	if err != nil {
 		c.JSON(404, gin.H{"error": "resource not found"})
-		return
-	}
-	if cr.UserUID != userUID {
-		c.JSON(403, gin.H{"error": "forbidden"})
 		return
 	}
 
@@ -90,16 +85,15 @@ func (h *CombinatorHandler) GetRDB(c *gin.Context) {
 func (h *CombinatorHandler) CreateKV(c *gin.Context) {
 	userUID := c.GetString("user_id")
 
-	id := GenerateResourceUID()
 	resourceID := GenerateResourceUID()
-	if err := dblayer.CreateCombinatorResource(id, userUID, "kv", resourceID); err != nil {
+	if err := dblayer.CreateCombinatorResource(userUID, "kv", resourceID); err != nil {
 		c.JSON(500, gin.H{"error": "failed to create resource: " + err.Error()})
 		return
 	}
 
-	h.proc.Submit(NewCreateKVJob(id, userUID, resourceID))
+	h.proc.Submit(NewCreateKVJob(userUID, resourceID))
 
-	c.JSON(200, gin.H{"id": id, "status": "loading"})
+	c.JSON(200, gin.H{"id": resourceID, "status": "loading"})
 }
 
 // ListKVs lists all KV resources for user from database
@@ -118,19 +112,15 @@ func (h *CombinatorHandler) ListKVs(c *gin.Context) {
 // DeleteRDB deletes an RDB resource record and submits async job
 func (h *CombinatorHandler) DeleteRDB(c *gin.Context) {
 	userUID := c.GetString("user_id")
-	id := c.Param("id")
+	resourceID := c.Param("id")
 
-	cr, err := dblayer.GetCombinatorResource(id)
+	cr, err := dblayer.GetCombinatorResource(userUID, "rdb", resourceID)
 	if err != nil {
 		c.JSON(404, gin.H{"error": "resource not found"})
 		return
 	}
-	if cr.UserUID != userUID {
-		c.JSON(403, gin.H{"error": "forbidden"})
-		return
-	}
 
-	if err := dblayer.DeleteCombinatorResource(id); err != nil {
+	if err := dblayer.DeleteCombinatorResource(userUID, "rdb", resourceID); err != nil {
 		c.JSON(500, gin.H{"error": "failed to delete resource: " + err.Error()})
 		return
 	}
@@ -143,19 +133,15 @@ func (h *CombinatorHandler) DeleteRDB(c *gin.Context) {
 // DeleteKV deletes a KV resource record and submits async job
 func (h *CombinatorHandler) DeleteKV(c *gin.Context) {
 	userUID := c.GetString("user_id")
-	id := c.Param("id")
+	resourceID := c.Param("id")
 
-	cr, err := dblayer.GetCombinatorResource(id)
+	cr, err := dblayer.GetCombinatorResource(userUID, "kv", resourceID)
 	if err != nil {
 		c.JSON(404, gin.H{"error": "resource not found"})
 		return
 	}
-	if cr.UserUID != userUID {
-		c.JSON(403, gin.H{"error": "forbidden"})
-		return
-	}
 
-	if err := dblayer.DeleteCombinatorResource(id); err != nil {
+	if err := dblayer.DeleteCombinatorResource(userUID, "kv", resourceID); err != nil {
 		c.JSON(500, gin.H{"error": "failed to delete resource: " + err.Error()})
 		return
 	}

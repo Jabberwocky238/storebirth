@@ -43,19 +43,19 @@ func (j *DeployWorkerJob) Do() error {
 		return fmt.Errorf("get version %d: %w", j.VersionID, err)
 	}
 
-	name := controller.WorkerName(w.WorkerID, w.UserUID)
+	name := controller.WorkerName(w.WID, w.UserUID)
 	err = controller.CreateWorkerAppCR(
 		k8s.DynamicClient, name,
-		w.WorkerID, w.UserUID, v.Image, sk, v.Port,
+		w.WID, w.UserUID, v.Image, sk, v.Port,
 	)
 	if err != nil {
 		dblayer.UpdateDeployVersionStatus(j.VersionID, "error", err.Error())
-		dblayer.UpdateWorkerStatus(v.WorkerID, "error")
+		dblayer.UpdateWorkerStatus(w.WID, "error")
 		return fmt.Errorf("create CR for version %d: %w", j.VersionID, err)
 	}
 
 	log.Printf("[worker] CR created for version %d", j.VersionID)
-	if err := dblayer.DeployVersionSuccess(j.VersionID, v.WorkerID); err != nil {
+	if err := dblayer.DeployVersionSuccess(j.VersionID, w.ID); err != nil {
 		log.Printf("[worker] update deploy status failed: %v", err)
 	}
 	return nil

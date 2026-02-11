@@ -23,7 +23,7 @@ const (
 )
 
 type CustomDomain struct {
-	ID        string       `json:"id"`
+	ID        int          `json:"id"`
 	Domain    string       `json:"domain"`
 	Target    string       `json:"target"`
 	TXTName   string       `json:"txt_name"`
@@ -42,23 +42,24 @@ func generateVerifyToken() string {
 
 // NewCustomDomain creates a new custom domain verification request
 func NewCustomDomain(userUID, domain, target string) (*CustomDomain, error) {
-	id := generateVerifyToken()[:8]
 	token := generateVerifyToken()
+	txtName := fmt.Sprintf("_combinator-verify.%s", domain)
+	txtValue := fmt.Sprintf("combinator-verify=%s", token)
+
+	id, err := dblayer.CreateCustomDomain(userUID, domain, target, txtName, txtValue, string(DomainStatusPending))
+	if err != nil {
+		return nil, err
+	}
 
 	cd := &CustomDomain{
 		ID:        id,
 		Domain:    domain,
 		Target:    target,
-		TXTName:   fmt.Sprintf("_combinator-verify.%s", domain),
-		TXTValue:  fmt.Sprintf("combinator-verify=%s", token),
+		TXTName:   txtName,
+		TXTValue:  txtValue,
 		Status:    DomainStatusPending,
 		UserUID:   userUID,
 		CreatedAt: time.Now(),
-	}
-
-	err := dblayer.CreateCustomDomain(id, userUID, domain, target, cd.TXTName, cd.TXTValue, string(cd.Status))
-	if err != nil {
-		return nil, err
 	}
 
 	return cd, nil
@@ -102,8 +103,8 @@ func (cd *CustomDomain) CreateIngressRoute() error {
 	}
 
 	ctx := context.Background()
-	name := fmt.Sprintf("custom-domain-%s", cd.ID)
-	tlsSecretName := fmt.Sprintf("custom-domain-tls-%s", cd.ID)
+	name := fmt.Sprintf("custom-domain-%d", cd.ID)
+	tlsSecretName := fmt.Sprintf("custom-domain-tls-%d", cd.ID)
 
 	// Create ExternalName Service pointing to target domain
 	svc := &corev1.Service{
@@ -190,7 +191,7 @@ func (cd *CustomDomain) CreateIngressRoute() error {
 }
 
 // GetCustomDomain returns a custom domain by ID
-func GetCustomDomain(id string) *CustomDomain {
+func GetCustomDomain(id int) *CustomDomain {
 	cd, err := dblayer.GetCustomDomain(id)
 	if err != nil {
 		return nil
@@ -231,14 +232,14 @@ func ListCustomDomains(userUID string) []*CustomDomain {
 }
 
 // DeleteCustomDomain deletes a custom domain, Service and IngressRoute
-func DeleteCustomDomain(id string) error {
+func DeleteCustomDomain(id int) error {
 	// Delete from database
 	if err := dblayer.DeleteCustomDomain(id); err != nil {
 		return err
 	}
 
 	ctx := context.Background()
-	name := fmt.Sprintf("custom-domain-%s", id)
+	name := fmt.Sprintf("custom-domain-%d", id)
 
 	// Delete Service
 	if K8sClient != nil {

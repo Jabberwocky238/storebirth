@@ -23,7 +23,7 @@ type VerificationCode struct {
 
 // CustomDomain model
 type CustomDomain struct {
-	ID        string    `json:"id"`
+	ID        int       `json:"id"`
 	UserUID   string    `json:"user_uid"`
 	Domain    string    `json:"domain"`
 	Target    string    `json:"target"`
@@ -35,9 +35,9 @@ type CustomDomain struct {
 
 // Worker model
 type Worker struct {
-	ID              int       `json:"-"`
+	ID              int       `json:"id"`
+	WID             string    `json:"wid"`
 	UserUID         string    `json:"user_uid"`
-	WorkerID        string    `json:"worker_id"`
 	WorkerName      string    `json:"worker_name"`
 	Status          string    `json:"status"` // unloaded, loading, active, error
 	ActiveVersionID *int      `json:"active_version_id"`
@@ -49,7 +49,7 @@ type Worker struct {
 // WorkerDeployVersion model
 type WorkerDeployVersion struct {
 	ID        int       `json:"id"`
-	WorkerID  string    `json:"worker_id"`
+	WorkerID  int       `json:"worker_id"`
 	Image     string    `json:"image"`
 	Port      int       `json:"port"`
 	Status    string    `json:"status"` // loading, success, error
@@ -59,7 +59,7 @@ type WorkerDeployVersion struct {
 
 // CombinatorResource model
 type CombinatorResource struct {
-	ID           string    `json:"id"`
+	ID           int       `json:"id"`
 	UserUID      string    `json:"user_uid"`
 	ResourceType string    `json:"resource_type"` // rdb, kv
 	ResourceID   string    `json:"resource_id"`

@@ -39,7 +39,7 @@ func (h *WorkerHandler) CreateWorker(c *gin.Context) {
 
 	workerID := uuid.New().String()[:8]
 
-	if err := dblayer.CreateWorker(userUID, workerID, req.WorkerName); err != nil {
+	if err := dblayer.CreateWorker(workerID, userUID, req.WorkerName); err != nil {
 		c.JSON(500, gin.H{"error": "failed to create worker"})
 		return
 	}
@@ -84,11 +84,11 @@ func (h *WorkerHandler) ListWorkers(c *gin.Context) {
 	result := make([]gin.H, len(workers))
 	for i, w := range workers {
 		result[i] = gin.H{
-			"worker_id":         w.WorkerID,
+			"worker_id":         w.WID,
 			"worker_name":       w.WorkerName,
 			"status":            w.Status,
 			"active_version_id": w.ActiveVersionID,
-			"url":               workerURL(w.WorkerID, w.UserUID),
+			"url":               workerURL(w.WID, w.UserUID),
 		}
 	}
 	c.JSON(200, result)
@@ -112,7 +112,7 @@ func (h *WorkerHandler) GetWorker(c *gin.Context) {
 		}
 	}
 
-	versions, err := dblayer.ListDeployVersions(workerID, 10, offset)
+	versions, err := dblayer.ListDeployVersions(w.ID, 10, offset)
 	if err != nil {
 		c.JSON(500, gin.H{"error": "failed to list versions"})
 		return
@@ -121,7 +121,7 @@ func (h *WorkerHandler) GetWorker(c *gin.Context) {
 	c.JSON(200, gin.H{
 		"worker":   w,
 		"versions": versions,
-		"url":      workerURL(w.WorkerID, w.UserUID),
+		"url":      workerURL(w.WID, w.UserUID),
 	})
 }
 

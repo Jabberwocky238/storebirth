@@ -45,7 +45,7 @@ func main() {
 
 	// Setup Internal Gin router (internal services access)
 	router := gin.Default()
-	router.GET("/health", handlers.Health)
+	router.GET("/health", handlers.HealthInner)
 
 	api := router.Group("/api")
 	{

@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS verification_codes (
 
 -- Custom domains table
 CREATE TABLE IF NOT EXISTS custom_domains (
-    id VARCHAR(16) PRIMARY KEY,
+    id SERIAL PRIMARY KEY,
     user_uid VARCHAR(64) NOT NULL,
     domain VARCHAR(255) UNIQUE NOT NULL,
     target VARCHAR(255) NOT NULL,
@@ -35,8 +35,8 @@ CREATE TABLE IF NOT EXISTS custom_domains (
 -- Workers table
 CREATE TABLE IF NOT EXISTS workers (
     id SERIAL PRIMARY KEY,
+    wid VARCHAR(64) UNIQUE NOT NULL,
     user_uid VARCHAR(64) NOT NULL,
-    worker_id VARCHAR(16) UNIQUE NOT NULL,
     worker_name VARCHAR(255) NOT NULL,
     status VARCHAR(16) NOT NULL DEFAULT 'unloaded',
     active_version_id INTEGER,
@@ -46,12 +46,12 @@ CREATE TABLE IF NOT EXISTS workers (
 );
 
 CREATE INDEX IF NOT EXISTS idx_workers_user_uid ON workers(user_uid);
-CREATE INDEX IF NOT EXISTS idx_workers_worker_id ON workers(worker_id);
+CREATE INDEX IF NOT EXISTS idx_workers_wid ON workers(wid);
 
 -- Worker deploy versions table
 CREATE TABLE IF NOT EXISTS worker_deploy_versions (
     id SERIAL PRIMARY KEY,
-    worker_id VARCHAR(16) NOT NULL REFERENCES workers(worker_id) ON DELETE CASCADE,
+    worker_id INTEGER NOT NULL REFERENCES workers(id) ON DELETE CASCADE,
     image VARCHAR(512) NOT NULL,
     port INTEGER NOT NULL,
     status VARCHAR(16) NOT NULL DEFAULT 'loading',
@@ -63,7 +63,7 @@ CREATE INDEX IF NOT EXISTS idx_wdv_worker_id ON worker_deploy_versions(worker_id
 
 -- Combinator resources table
 CREATE TABLE IF NOT EXISTS combinator_resources (
-    id VARCHAR(16) PRIMARY KEY,
+    id SERIAL PRIMARY KEY,
     user_uid VARCHAR(64) NOT NULL,
     resource_type VARCHAR(32) NOT NULL,
     resource_id VARCHAR(64) NOT NULL,
@@ -78,7 +78,7 @@ CREATE INDEX IF NOT EXISTS idx_combinator_resources_user_uid ON combinator_resou
 CREATE TABLE IF NOT EXISTS combinator_resource_reports (
     id SERIAL PRIMARY KEY,
     user_uid VARCHAR(64) NOT NULL,
-    resource_id VARCHAR(64) NOT NULL REFERENCES combinator_resources(resource_id) ON DELETE CASCADE,
+    resource_id INTEGER NOT NULL REFERENCES combinator_resources(id) ON DELETE CASCADE,
     datachange INTEGER NOT NULL,
     record_start TIMESTAMP NOT NULL,
     record_end TIMESTAMP NOT NULL,
@@ -87,6 +87,19 @@ CREATE TABLE IF NOT EXISTS combinator_resource_reports (
 
 CREATE INDEX IF NOT EXISTS idx_combinator_resource_reports_user_uid ON combinator_resource_reports(user_uid);
 CREATE INDEX IF NOT EXISTS idx_combinator_resource_reports_resource_id ON combinator_resource_reports(resource_id);
+
+-- Console tasks table
+CREATE TABLE IF NOT EXISTS console_tasks (
+    id SERIAL PRIMARY KEY,
+    task_type TEXT NOT NULL,
+    task_status TEXT NOT NULL,
+    task_detailed_status TEXT NOT NULL,
+    task_info TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_console_tasks_status ON console_tasks(task_status);
+CREATE INDEX IF NOT EXISTS idx_console_tasks_type ON console_tasks(task_type);
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_verification_codes_email ON verification_codes(email);

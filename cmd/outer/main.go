@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path"
 	"syscall"
 	"time"
 
@@ -65,7 +64,7 @@ func main() {
 
 	// 5. Cron
 	cron := k8s.NewCronScheduler(proc)
-	cron.RegisterJob(24*time.Hour, &handlers.UserAuditJob)
+	cron.RegisterJob(24*time.Hour, &handlers.UserAuditJob{})
 	cron.RegisterJob(12*time.Hour, &handlers.DomainCheckJob{})
 	proc.Submit(&handlers.UserAuditJob{})
 	cron.Start()
@@ -75,6 +74,7 @@ func main() {
 
 	// Setup External Gin router (public access)
 	router := gin.Default()
+	router.GET("/health", handlers.HealthOuter)
 	if os.Getenv("ENV") == "test" {
 		router.Use(crossOriginMiddleware())
 	}
@@ -127,16 +127,6 @@ func main() {
 	{
 		sensitive.POST("/worker/deploy", wh.DeployWorker)
 	}
-
-	// Fallback: serve static files from dist/ or index.html for SPA
-	router.NoRoute(func(c *gin.Context) {
-		filePath := path.Join("./dist", c.Request.URL.Path)
-		if _, err := os.Stat(filePath); err == nil {
-			c.File(filePath)
-			return
-		}
-		c.File("./dist/index.html")
-	})
 
 	// HTTP Server
 	srv := &http.Server{Addr: *listen, Handler: router}

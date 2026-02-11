@@ -100,17 +100,18 @@ func ListUserUIDsPaged(limit, offset int) ([]string, error) {
 // ========== CustomDomain Actions ==========
 
 // CreateCustomDomain 创建自定义域名
-func CreateCustomDomain(id, userUID, domain, target, txtName, txtValue, status string) error {
-	_, err := DB.Exec(
-		`INSERT INTO custom_domains (id, user_uid, domain, target, txt_name, txt_value, status)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		id, userUID, domain, target, txtName, txtValue, status,
-	)
-	return err
+func CreateCustomDomain(userUID, domain, target, txtName, txtValue, status string) (int, error) {
+	var id int
+	err := DB.QueryRow(
+		`INSERT INTO custom_domains (user_uid, domain, target, txt_name, txt_value, status)
+		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+		userUID, domain, target, txtName, txtValue, status,
+	).Scan(&id)
+	return id, err
 }
 
 // GetCustomDomain 获取自定义域名
-func GetCustomDomain(id string) (*CustomDomain, error) {
+func GetCustomDomain(id int) (*CustomDomain, error) {
 	var cd CustomDomain
 	err := DB.QueryRow(
 		`SELECT id, user_uid, domain, target, txt_name, txt_value, status, created_at
@@ -147,7 +148,7 @@ func ListCustomDomains(userUID string) ([]*CustomDomain, error) {
 }
 
 // UpdateCustomDomainStatus 更新自定义域名状态
-func UpdateCustomDomainStatus(id, status string) error {
+func UpdateCustomDomainStatus(id int, status string) error {
 	_, err := DB.Exec(
 		`UPDATE custom_domains SET status = $1 WHERE id = $2`,
 		status, id,
@@ -156,7 +157,7 @@ func UpdateCustomDomainStatus(id, status string) error {
 }
 
 // DeleteCustomDomain 删除自定义域名
-func DeleteCustomDomain(id string) error {
+func DeleteCustomDomain(id int) error {
 	_, err := DB.Exec(`DELETE FROM custom_domains WHERE id = $1`, id)
 	return err
 }
@@ -186,21 +187,22 @@ func ListAllSuccessDomains() ([]*CustomDomain, error) {
 // ========== CombinatorResource Actions ==========
 
 // CreateCombinatorResource 创建 combinator 资源记录
-func CreateCombinatorResource(id, userUID, resourceType, resourceID string) error {
-	_, err := DB.Exec(
-		`INSERT INTO combinator_resources (id, user_uid, resource_type, resource_id)
-		 VALUES ($1, $2, $3, $4)`,
-		id, userUID, resourceType, resourceID,
-	)
+func CreateCombinatorResource(userUID, resourceType, resourceID string) error {
+	err := DB.QueryRow(
+		`INSERT INTO combinator_resources (user_uid, resource_type, resource_id)
+		 VALUES ($1, $2, $3) RETURNING id`,
+		userUID, resourceType, resourceID,
+	).Scan()
 	return err
 }
 
 // GetCombinatorResource 获取单个资源
-func GetCombinatorResource(id string) (*CombinatorResource, error) {
+func GetCombinatorResource(userUID, resourceType, resourceID string) (*CombinatorResource, error) {
 	var cr CombinatorResource
 	err := DB.QueryRow(
 		`SELECT id, user_uid, resource_type, resource_id, status, msg, created_at
-		 FROM combinator_resources WHERE id = $1`, id,
+		 FROM combinator_resources WHERE user_uid = $1 AND resource_type = $2 AND resource_id = $3`,
+		userUID, resourceType, resourceID,
 	).Scan(&cr.ID, &cr.UserUID, &cr.ResourceType, &cr.ResourceID, &cr.Status, &cr.Msg, &cr.CreatedAt)
 	if err != nil {
 		return nil, err
@@ -255,17 +257,21 @@ func ListActiveCombinatorResources(userUID string) ([]*CombinatorResource, error
 }
 
 // UpdateCombinatorResourceStatus 更新资源状态
-func UpdateCombinatorResourceStatus(id, status, msg string) error {
+func UpdateCombinatorResourceStatus(userUID, resourceType, resourceID, status, msg string) error {
 	_, err := DB.Exec(
-		`UPDATE combinator_resources SET status = $1, msg = $2 WHERE id = $3`,
-		status, msg, id,
+		`UPDATE combinator_resources SET status = $1, msg = $2
+		 WHERE user_uid = $3 AND resource_type = $4 AND resource_id = $5`,
+		status, msg, userUID, resourceType, resourceID,
 	)
 	return err
 }
 
 // DeleteCombinatorResource 删除资源记录
-func DeleteCombinatorResource(id string) error {
-	_, err := DB.Exec(`DELETE FROM combinator_resources WHERE id = $1`, id)
+func DeleteCombinatorResource(userUID, resourceType, resourceID string) error {
+	_, err := DB.Exec(
+		`DELETE FROM combinator_resources WHERE user_uid = $1 AND resource_type = $2 AND resource_id = $3`,
+		userUID, resourceType, resourceID,
+	)
 	return err
 }
 

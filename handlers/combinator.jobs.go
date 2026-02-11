@@ -78,15 +78,13 @@ func notifyAllCombinatorPods(userUID, resourceID, resourceType string) error {
 // --- CreateRDBJob ---
 
 type CreateRDBJob struct {
-	RecordID   string // combinator_resources.id
 	UserUID    string
 	Name       string
 	ResourceID string
 }
 
-func NewCreateRDBJob(recordID, userUID, name, resourceID string) *CreateRDBJob {
+func NewCreateRDBJob(userUID, name, resourceID string) *CreateRDBJob {
 	return &CreateRDBJob{
-		RecordID:   recordID,
 		UserUID:    userUID,
 		Name:       name,
 		ResourceID: resourceID,
@@ -94,23 +92,23 @@ func NewCreateRDBJob(recordID, userUID, name, resourceID string) *CreateRDBJob {
 }
 
 func (j *CreateRDBJob) Type() string { return "combinator.create_rdb" }
-func (j *CreateRDBJob) ID() string   { return j.RecordID }
+func (j *CreateRDBJob) ID() string   { return j.Type() + fmt.Sprintf("%s_%s", j.UserUID, j.ResourceID) }
 
 func (j *CreateRDBJob) Do() error {
 	if k8s.RDBManager == nil {
-		dblayer.UpdateCombinatorResourceStatus(j.RecordID, "error", "cockroachdb not available")
+		dblayer.UpdateCombinatorResourceStatus(j.UserUID, "rdb", j.ResourceID, "error", "cockroachdb not available")
 		return fmt.Errorf("cockroachdb not available")
 	}
 	if err := k8s.RDBManager.InitUserRDB(j.UserUID); err != nil {
-		dblayer.UpdateCombinatorResourceStatus(j.RecordID, "error", err.Error())
+		dblayer.UpdateCombinatorResourceStatus(j.UserUID, "rdb", j.ResourceID, "error", err.Error())
 		return fmt.Errorf("init user rdb: %w", err)
 	}
 	if err := k8s.RDBManager.CreateSchema(j.UserUID, j.ResourceID); err != nil {
-		dblayer.UpdateCombinatorResourceStatus(j.RecordID, "error", err.Error())
+		dblayer.UpdateCombinatorResourceStatus(j.UserUID, "rdb", j.ResourceID, "error", err.Error())
 		return fmt.Errorf("create schema: %w", err)
 	}
 
-	dblayer.UpdateCombinatorResourceStatus(j.RecordID, "active", "")
+	dblayer.UpdateCombinatorResourceStatus(j.UserUID, "rdb", j.ResourceID, "active", "")
 	log.Printf("[combinator] RDB %s created for user %s", j.ResourceID, j.UserUID)
 	return nil
 }
@@ -127,7 +125,7 @@ func NewDeleteRDBJob(userUID, resourceID string) *DeleteRDBJob {
 }
 
 func (j *DeleteRDBJob) Type() string { return "combinator.delete_rdb" }
-func (j *DeleteRDBJob) ID() string   { return j.ResourceID }
+func (j *DeleteRDBJob) ID() string   { return j.Type() + fmt.Sprintf("%s_%s", j.UserUID, j.ResourceID) }
 
 func (j *DeleteRDBJob) Do() error {
 	if k8s.RDBManager != nil {
@@ -148,24 +146,22 @@ func (j *DeleteRDBJob) Do() error {
 // --- CreateKVJob ---
 
 type CreateKVJob struct {
-	RecordID   string // combinator_resources.id
 	UserUID    string
 	ResourceID string
 }
 
-func NewCreateKVJob(recordID, userUID, resourceID string) *CreateKVJob {
+func NewCreateKVJob(userUID, resourceID string) *CreateKVJob {
 	return &CreateKVJob{
-		RecordID:   recordID,
 		UserUID:    userUID,
 		ResourceID: resourceID,
 	}
 }
 
 func (j *CreateKVJob) Type() string { return "combinator.create_kv" }
-func (j *CreateKVJob) ID() string   { return j.RecordID }
+func (j *CreateKVJob) ID() string   { return j.Type() + fmt.Sprintf("%s_%s", j.UserUID, j.ResourceID) }
 
 func (j *CreateKVJob) Do() error {
-	dblayer.UpdateCombinatorResourceStatus(j.RecordID, "active", "")
+	dblayer.UpdateCombinatorResourceStatus(j.UserUID, "kv", j.ResourceID, "active", "")
 	log.Printf("[combinator] KV %s created for user %s", j.ResourceID, j.UserUID)
 	return nil
 }
@@ -182,7 +178,7 @@ func NewDeleteKVJob(userUID, resourceID string) *DeleteKVJob {
 }
 
 func (j *DeleteKVJob) Type() string { return "combinator.delete_kv" }
-func (j *DeleteKVJob) ID() string   { return j.ResourceID }
+func (j *DeleteKVJob) ID() string   { return j.Type() + fmt.Sprintf("%s_%s", j.UserUID, j.ResourceID) }
 
 func (j *DeleteKVJob) Do() error {
 	// 通知所有 combinator pod
