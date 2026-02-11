@@ -15,6 +15,7 @@ RUN apk --no-cache add ca-certificates
 WORKDIR /app
 
 COPY --from=builder /app/inner-gateway .
+COPY --from=builder /app/scripts/init.sql ./scripts/
 
 EXPOSE 9901
 
