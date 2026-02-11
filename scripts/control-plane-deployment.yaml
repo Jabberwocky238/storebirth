@@ -160,10 +160,10 @@ spec:
       initContainers:
       - name: download-init-sql
         image: curlimages/curl:latest
-        command: ['sh', '-c', 'curl -fsSL https://raw.githubusercontent.com/jabberwocky238/console/main/scripts/init.sql -o /scripts/init.sql']
+        command: ['sh', '-c', 'mkdir -p /app/scripts && curl -fsSL https://raw.githubusercontent.com/jabberwocky238/console/main/scripts/init.sql -o /app/scripts/init.sql']
         volumeMounts:
         - name: scripts
-          mountPath: /scripts
+          mountPath: /app
       containers:
       - name: outer-gateway
         image: ghcr.io/jabberwocky238/console-outer:latest
@@ -205,7 +205,7 @@ spec:
         - "host=postgres port=5432 user=postgres password=postgres dbname=combfather sslmode=disable"
         volumeMounts:
         - name: scripts
-          mountPath: /scripts
+          mountPath: /app
       volumes:
       - name: scripts
         emptyDir: {}
@@ -231,10 +231,10 @@ spec:
       initContainers:
       - name: download-init-sql
         image: curlimages/curl:latest
-        command: ['sh', '-c', 'curl -fsSL https://raw.githubusercontent.com/jabberwocky238/console/main/scripts/init.sql -o /scripts/init.sql']
+        command: ['sh', '-c', 'mkdir -p /app/scripts && curl -fsSL https://raw.githubusercontent.com/jabberwocky238/console/main/scripts/init.sql -o /app/scripts/init.sql']
         volumeMounts:
         - name: scripts
-          mountPath: /scripts
+          mountPath: /app
       containers:
       - name: inner-gateway
         image: ghcr.io/jabberwocky238/console-inner:latest
@@ -267,7 +267,7 @@ spec:
         - "host=postgres port=5432 user=postgres password=postgres dbname=combfather sslmode=disable"
         volumeMounts:
         - name: scripts
-          mountPath: /scripts
+          mountPath: /app
       volumes:
       - name: scripts
         emptyDir: {}
