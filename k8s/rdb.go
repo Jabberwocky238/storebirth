@@ -173,7 +173,10 @@ func (m *RootRDBManager) tryGetRootDB() (*sql.DB, error) {
 	// Fast path: try read lock first
 	m.rootmu.RLock()
 	if m.rootDB != nil {
-		if err := m.rootDB.Ping(); err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		err := m.rootDB.PingContext(ctx)
+		cancel()
+		if err == nil {
 			db := m.rootDB
 			m.rootmu.RUnlock()
 			return db, nil
@@ -187,7 +190,10 @@ func (m *RootRDBManager) tryGetRootDB() (*sql.DB, error) {
 
 	// Double check after acquiring write lock
 	if m.rootDB != nil {
-		if err := m.rootDB.Ping(); err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		err := m.rootDB.PingContext(ctx)
+		cancel()
+		if err == nil {
 			return m.rootDB, nil
 		}
 		log.Println("[rdb] root connection lost, reconnecting...")
