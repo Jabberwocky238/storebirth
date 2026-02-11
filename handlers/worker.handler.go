@@ -19,12 +19,10 @@ func workerURL(workerID, userUID string) string {
 	return fmt.Sprintf("https://%s.worker.%s", controller.WorkerName(workerID, userUID), k8s.Domain)
 }
 
-type WorkerHandler struct {
-	proc *k8s.Processor
-}
+type WorkerHandler struct{}
 
-func NewWorkerHandler(proc *k8s.Processor) *WorkerHandler {
-	return &WorkerHandler{proc: proc}
+func NewWorkerHandler() *WorkerHandler {
+	return &WorkerHandler{}
 }
 
 // CreateWorker 创建 worker 记录

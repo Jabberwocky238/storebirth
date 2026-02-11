@@ -157,6 +157,13 @@ spec:
         app: control-plane-outer
     spec:
       serviceAccountName: control-plane-sa
+      initContainers:
+      - name: download-init-sql
+        image: curlimages/curl:latest
+        command: ['sh', '-c', 'curl -fsSL https://raw.githubusercontent.com/jabberwocky238/console/main/scripts/init.sql -o /scripts/init.sql']
+        volumeMounts:
+        - name: scripts
+          mountPath: /scripts
       containers:
       - name: outer-gateway
         image: ghcr.io/jabberwocky238/console-outer:latest
@@ -196,6 +203,12 @@ spec:
         - "0.0.0.0:9900"
         - "-d"
         - "host=postgres port=5432 user=postgres password=postgres dbname=combfather sslmode=disable"
+        volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+      volumes:
+      - name: scripts
+        emptyDir: {}
 
 ---
 # Control Plane Inner Deployment
@@ -215,6 +228,13 @@ spec:
         app: control-plane-inner
     spec:
       serviceAccountName: control-plane-sa
+      initContainers:
+      - name: download-init-sql
+        image: curlimages/curl:latest
+        command: ['sh', '-c', 'curl -fsSL https://raw.githubusercontent.com/jabberwocky238/console/main/scripts/init.sql -o /scripts/init.sql']
+        volumeMounts:
+        - name: scripts
+          mountPath: /scripts
       containers:
       - name: inner-gateway
         image: ghcr.io/jabberwocky238/console-inner:latest
@@ -245,6 +265,12 @@ spec:
         - "0.0.0.0:9901"
         - "-d"
         - "host=postgres port=5432 user=postgres password=postgres dbname=combfather sslmode=disable"
+        volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+      volumes:
+      - name: scripts
+        emptyDir: {}
 ---
 # ServiceAccount for Control Plane
 apiVersion: v1

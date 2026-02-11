@@ -8,12 +8,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type CombinatorHandler struct {
-	proc *k8s.Processor
-}
+type CombinatorHandler struct {}
 
-func NewCombinatorHandler(proc *k8s.Processor) *CombinatorHandler {
-	return &CombinatorHandler{proc: proc}
+func NewCombinatorHandler() *CombinatorHandler {
+	return &CombinatorHandler{}
 }
 
 // CreateRDB creates a new RDB resource record and submits async job

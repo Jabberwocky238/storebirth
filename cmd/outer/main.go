@@ -59,9 +59,8 @@ func main() {
 	proc.Start()
 	defer proc.Close()
 
-	wh := handlers.NewWorkerHandler(proc)
-	ah := handlers.NewAuthHandler(proc)
-	ch := handlers.NewCombinatorHandler(proc)
+	wh := handlers.NewWorkerHandler()
+	ch := handlers.NewCombinatorHandler()
 
 	// 5. Cron
 	cron := k8s.NewCronScheduler(proc)
@@ -88,7 +87,7 @@ func main() {
 
 	api := router.Group("/api")
 	// Public routes
-	api.POST("/auth/register", ah.Register)
+	api.POST("/auth/register", handlers.Register)
 	api.POST("/auth/login", handlers.Login)
 	api.POST("/auth/send-code", handlers.SendCode)
 	api.POST("/auth/reset-password", handlers.ResetPassword)

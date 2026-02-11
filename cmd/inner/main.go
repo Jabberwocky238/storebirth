@@ -41,7 +41,7 @@ func main() {
 	defer proc.Close()
 	defer cron.Close()
 
-	wh := handlers.NewWorkerHandler(proc)
+	wh := handlers.NewWorkerHandler()
 	cih := handlers.NewCombinatorInternalHandler(proc)
 	th := handlers.NewTaskHandler(proc, cron)
 

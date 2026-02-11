@@ -5,7 +5,6 @@ import (
 	"io"
 	"jabberwocky238/console/dblayer"
 	"jabberwocky238/console/handlers/jobs"
-	"jabberwocky238/console/k8s"
 	"log"
 	"strings"
 	"time"
@@ -19,16 +18,8 @@ var SPECIAL_CODE = "701213"
 var RESEND_API_KEY string
 var ResendClient *resend.Client
 
-type AuthHandler struct {
-	proc *k8s.Processor
-}
-
-func NewAuthHandler(proc *k8s.Processor) *AuthHandler {
-	return &AuthHandler{proc: proc}
-}
-
 // Register handles user registration
-func (h *AuthHandler) Register(c *gin.Context) {
+func Register(c *gin.Context) {
 	var req struct {
 		Email    string `json:"email" binding:"required"`
 		Password string `json:"password" binding:"required,min=2"`
