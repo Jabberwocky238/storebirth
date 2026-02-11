@@ -1,19 +1,24 @@
-package handlers
+package jobs
 
 import (
 	"log"
 	"net"
 
 	"jabberwocky238/console/dblayer"
+	"jabberwocky238/console/k8s"
 )
 
 type domainCheckJob struct{}
 
-func NewDomainCheckJob() *domainCheckJob {
+func NewDomainCheckJob() k8s.Job {
 	return &domainCheckJob{}
 }
 
-func (j *domainCheckJob) Type() string { return "domain.check" }
+func init() {
+	RegisterJobType(JobTypeDomainCheck, NewDomainCheckJob)
+}
+
+func (j *domainCheckJob) Type() k8s.JobType { return JobTypeDomainCheck }
 func (j *domainCheckJob) ID() string   { return "periodic" }
 
 func (j *domainCheckJob) Do() error {

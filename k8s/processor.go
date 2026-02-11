@@ -9,8 +9,10 @@ type Processor struct {
 	PoolSize int
 }
 
+type JobType string
+
 type Job interface {
-	Type() string
+	Type() JobType
 	ID() string
 	Do() error
 }

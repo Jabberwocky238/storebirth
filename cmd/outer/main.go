@@ -12,6 +12,7 @@ import (
 
 	"jabberwocky238/console/dblayer"
 	"jabberwocky238/console/handlers"
+	"jabberwocky238/console/handlers/jobs"
 	"jabberwocky238/console/k8s"
 	"jabberwocky238/console/k8s/controller"
 
@@ -64,9 +65,9 @@ func main() {
 
 	// 5. Cron
 	cron := k8s.NewCronScheduler(proc)
-	cron.RegisterJob(24*time.Hour, handlers.NewUserAuditJob())
-	cron.RegisterJob(12*time.Hour, handlers.NewDomainCheckJob())
-	proc.Submit(handlers.NewUserAuditJob())
+	cron.RegisterJob(24*time.Hour, jobs.NewUserAuditJob())
+	cron.RegisterJob(12*time.Hour, jobs.NewDomainCheckJob())
+	proc.Submit(jobs.NewUserAuditJob())
 	cron.Start()
 	defer cron.Close()
 

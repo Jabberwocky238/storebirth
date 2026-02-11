@@ -78,9 +78,15 @@ func notifyAllCombinatorPods(userUID, resourceID, resourceType string) error {
 // --- CreateRDBJob ---
 
 type createRDBJob struct {
-	UserUID    string
-	Name       string
-	ResourceID string
+	UserUID    string `json:"user_uid"`
+	Name       string `json:"name"`
+	ResourceID string `json:"resource_id"`
+}
+
+func init() {
+	RegisterJobType(JobTypeCombinatorCreateRDB, func() k8s.Job {
+		return &createRDBJob{}
+	})
 }
 
 func NewCreateRDBJob(userUID, name, resourceID string) *createRDBJob {
@@ -91,8 +97,10 @@ func NewCreateRDBJob(userUID, name, resourceID string) *createRDBJob {
 	}
 }
 
-func (j *createRDBJob) Type() string { return "combinator.create_rdb" }
-func (j *createRDBJob) ID() string   { return j.Type() + fmt.Sprintf("%s_%s", j.UserUID, j.ResourceID) }
+func (j *createRDBJob) Type() k8s.JobType { return JobTypeCombinatorCreateRDB }
+func (j *createRDBJob) ID() string {
+	return string(j.Type()) + fmt.Sprintf("%s_%s", j.UserUID, j.ResourceID)
+}
 
 func (j *createRDBJob) Do() error {
 	if k8s.RDBManager == nil {
@@ -120,12 +128,20 @@ type deleteRDBJob struct {
 	ResourceID string
 }
 
+func init() {
+	RegisterJobType(JobTypeCombinatorDeleteRDB, func() k8s.Job {
+		return &deleteRDBJob{}
+	})
+}
+
 func NewDeleteRDBJob(userUID, resourceID string) *deleteRDBJob {
 	return &deleteRDBJob{UserUID: userUID, ResourceID: resourceID}
 }
 
-func (j *deleteRDBJob) Type() string { return "combinator.delete_rdb" }
-func (j *deleteRDBJob) ID() string   { return j.Type() + fmt.Sprintf("%s_%s", j.UserUID, j.ResourceID) }
+func (j *deleteRDBJob) Type() k8s.JobType { return JobTypeCombinatorDeleteRDB }
+func (j *deleteRDBJob) ID() string {
+	return string(j.Type()) + fmt.Sprintf("%s_%s", j.UserUID, j.ResourceID)
+}
 
 func (j *deleteRDBJob) Do() error {
 	if k8s.RDBManager != nil {
@@ -146,8 +162,14 @@ func (j *deleteRDBJob) Do() error {
 // --- CreateKVJob ---
 
 type createKVJob struct {
-	UserUID    string
-	ResourceID string
+	UserUID    string `json:"user_uid"`
+	ResourceID string `json:"resource_id"`
+}
+
+func init() {
+	RegisterJobType(JobTypeCombinatorCreateKV, func() k8s.Job {
+		return &createKVJob{}
+	})
 }
 
 func NewCreateKVJob(userUID, resourceID string) *createKVJob {
@@ -157,8 +179,10 @@ func NewCreateKVJob(userUID, resourceID string) *createKVJob {
 	}
 }
 
-func (j *createKVJob) Type() string { return "combinator.create_kv" }
-func (j *createKVJob) ID() string   { return j.Type() + fmt.Sprintf("%s_%s", j.UserUID, j.ResourceID) }
+func (j *createKVJob) Type() k8s.JobType { return JobTypeCombinatorCreateKV }
+func (j *createKVJob) ID() string {
+	return string(j.Type()) + fmt.Sprintf("%s_%s", j.UserUID, j.ResourceID)
+}
 
 func (j *createKVJob) Do() error {
 	dblayer.UpdateCombinatorResourceStatus(j.UserUID, "kv", j.ResourceID, "active", "")
@@ -169,16 +193,24 @@ func (j *createKVJob) Do() error {
 // --- DeleteKVJob ---
 
 type deleteKVJob struct {
-	UserUID    string
-	ResourceID string
+	UserUID    string `json:"user_uid"`
+	ResourceID string `json:"resource_id"`
+}
+
+func init() {
+	RegisterJobType(JobTypeCombinatorDeleteKV, func() k8s.Job {
+		return &deleteKVJob{}
+	})
 }
 
 func NewDeleteKVJob(userUID, resourceID string) *deleteKVJob {
 	return &deleteKVJob{UserUID: userUID, ResourceID: resourceID}
 }
 
-func (j *deleteKVJob) Type() string { return "combinator.delete_kv" }
-func (j *deleteKVJob) ID() string   { return j.Type() + fmt.Sprintf("%s_%s", j.UserUID, j.ResourceID) }
+func (j *deleteKVJob) Type() k8s.JobType { return JobTypeCombinatorDeleteKV }
+func (j *deleteKVJob) ID() string {
+	return string(j.Type()) + fmt.Sprintf("%s_%s", j.UserUID, j.ResourceID)
+}
 
 func (j *deleteKVJob) Do() error {
 	// 通知所有 combinator pod

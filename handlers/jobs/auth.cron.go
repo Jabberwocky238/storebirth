@@ -1,4 +1,4 @@
-package handlers
+package jobs
 
 import (
 	"context"
@@ -22,8 +22,14 @@ func NewUserAuditJob() *userAuditJob {
 	return &userAuditJob{}
 }
 
-func (j *userAuditJob) Type() string { return "auth.user_audit" }
-func (j *userAuditJob) ID() string   { return "periodic" }
+func init() {
+	RegisterJobType(JobTypeAuthUserAudit, func() k8s.Job {
+		return &userAuditJob{}
+	})
+}
+
+func (j *userAuditJob) Type() k8s.JobType { return JobTypeAuthUserAudit }
+func (j *userAuditJob) ID() string        { return "periodic" }
 
 func (j *userAuditJob) Do() error {
 	if k8s.K8sClient == nil || k8s.DynamicClient == nil {

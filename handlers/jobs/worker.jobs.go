@@ -15,12 +15,12 @@ import (
 // --- Worker Job types (implement k8s.Job) ---
 
 type deployWorkerJob struct {
-	WorkerID  string
-	UserUID   string
-	VersionID int
+	WorkerID  string `json:"worker_id"`
+	UserUID   string `json:"user_uid"`
+	VersionID int    `json:"version_id"`
 }
 
-func NewDeployWorkerJob(workerID, userUID string, versionID int) *deployWorkerJob {
+func NewDeployWorkerJob(workerID, userUID string, versionID int) k8s.Job {
 	return &deployWorkerJob{
 		WorkerID:  workerID,
 		UserUID:   userUID,
@@ -28,8 +28,14 @@ func NewDeployWorkerJob(workerID, userUID string, versionID int) *deployWorkerJo
 	}
 }
 
-func (j *deployWorkerJob) Type() string {
-	return "worker.deploy_worker"
+func init() {
+	RegisterJobType(JobTypeWorkerDeployWorker, func() k8s.Job {
+		return &deployWorkerJob{}
+	})
+}
+
+func (j *deployWorkerJob) Type() k8s.JobType {
+	return JobTypeWorkerDeployWorker
 }
 
 func (j *deployWorkerJob) ID() string {
@@ -62,12 +68,12 @@ func (j *deployWorkerJob) Do() error {
 }
 
 type syncEnvJob struct {
-	WorkerID string
-	UserUID  string
-	Data     map[string]string
+	WorkerID string            `json:"worker_id"`
+	UserUID  string            `json:"user_uid"`
+	Data     map[string]string `json:"data"`
 }
 
-func NewSyncEnvJob(workerID, userUID string, data map[string]string) *syncEnvJob {
+func NewSyncEnvJob(workerID, userUID string, data map[string]string) k8s.Job {
 	return &syncEnvJob{
 		WorkerID: workerID,
 		UserUID:  userUID,
@@ -75,8 +81,14 @@ func NewSyncEnvJob(workerID, userUID string, data map[string]string) *syncEnvJob
 	}
 }
 
-func (j *syncEnvJob) Type() string {
-	return "worker.sync_env"
+func init() {
+	RegisterJobType(JobTypeWorkerSyncEnv, func() k8s.Job {
+		return &syncEnvJob{}
+	})
+}
+
+func (j *syncEnvJob) Type() k8s.JobType {
+	return JobTypeWorkerSyncEnv
 }
 
 func (j *syncEnvJob) ID() string {
@@ -105,9 +117,9 @@ func (j *syncEnvJob) Do() error {
 }
 
 type syncSecretJob struct {
-	WorkerID string
-	UserUID  string
-	Data     map[string]string
+	WorkerID string            `json:"worker_id"`
+	UserUID  string            `json:"user_uid"`
+	Data     map[string]string `json:"data"`
 }
 
 func NewSyncSecretJob(workerID, userUID string, data map[string]string) *syncSecretJob {
@@ -118,8 +130,14 @@ func NewSyncSecretJob(workerID, userUID string, data map[string]string) *syncSec
 	}
 }
 
-func (j *syncSecretJob) Type() string {
-	return "worker.sync_secret"
+func init() {
+	RegisterJobType(JobTypeWorkerSyncSecret, func() k8s.Job {
+		return &syncSecretJob{}
+	})
+}
+
+func (j *syncSecretJob) Type() k8s.JobType {
+	return JobTypeWorkerSyncSecret
 }
 
 func (j *syncSecretJob) ID() string {
@@ -152,8 +170,14 @@ func (j *syncSecretJob) Do() error {
 }
 
 type deleteWorkerCRJob struct {
-	WorkerID string
-	UserUID  string
+	WorkerID string `json:"worker_id"`
+	UserUID  string `json:"user_uid"`
+}
+
+func init() {
+	RegisterJobType(JobTypeWorkerDeleteWorkerCR, func() k8s.Job {
+		return &deleteWorkerCRJob{}
+	})
 }
 
 func NewDeleteWorkerCRJob(workerID, userUID string) *deleteWorkerCRJob {
@@ -163,8 +187,8 @@ func NewDeleteWorkerCRJob(workerID, userUID string) *deleteWorkerCRJob {
 	}
 }
 
-func (j *deleteWorkerCRJob) Type() string {
-	return "worker.delete_worker_cr"
+func (j *deleteWorkerCRJob) Type() k8s.JobType {
+	return JobTypeWorkerDeleteWorkerCR
 }
 
 func (j *deleteWorkerCRJob) ID() string {

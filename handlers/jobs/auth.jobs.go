@@ -9,15 +9,21 @@ import (
 // --- Auth Job types (implement k8s.Job) ---
 
 type registerUserJob struct {
-	UserUID string
+	UserUID string `json:"user_uid"`
+}
+
+func init() {
+	RegisterJobType(JobTypeAuthRegisterUser, func() k8s.Job {
+		return &registerUserJob{}
+	})
 }
 
 func NewRegisterUserJob(userUID string) *registerUserJob {
 	return &registerUserJob{UserUID: userUID}
 }
 
-func (j *registerUserJob) Type() string {
-	return "auth.register_user"
+func (j *registerUserJob) Type() k8s.JobType {
+	return JobTypeAuthRegisterUser
 }
 
 func (j *registerUserJob) ID() string {
