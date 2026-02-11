@@ -24,6 +24,7 @@ type VerificationCode struct {
 // CustomDomain model
 type CustomDomain struct {
 	ID        int       `json:"id"`
+	CDID      string    `json:"cdid"`
 	UserUID   string    `json:"user_uid"`
 	Domain    string    `json:"domain"`
 	Target    string    `json:"target"`

@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	"strconv"
-
 	"jabberwocky238/console/k8s"
 
 	"github.com/gin-gonic/gin"
@@ -46,13 +44,8 @@ func ListCustomDomains(c *gin.Context) {
 
 // GetCustomDomain gets a custom domain by ID
 func GetCustomDomain(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.Atoi(idStr)
-	if err != nil {
-		c.JSON(400, gin.H{"error": "invalid id"})
-		return
-	}
-	cd := k8s.GetCustomDomain(id)
+	cdid := c.Param("id")
+	cd := k8s.GetCustomDomain(cdid)
 	if cd == nil {
 		c.JSON(404, gin.H{"error": "domain not found"})
 		return
@@ -62,13 +55,8 @@ func GetCustomDomain(c *gin.Context) {
 
 // DeleteCustomDomain deletes a custom domain
 func DeleteCustomDomain(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.Atoi(idStr)
-	if err != nil {
-		c.JSON(400, gin.H{"error": "invalid id"})
-		return
-	}
-	if err := k8s.DeleteCustomDomain(id); err != nil {
+	cdid := c.Param("id")
+	if err := k8s.DeleteCustomDomain(cdid); err != nil {
 		c.JSON(404, gin.H{"error": err.Error()})
 		return
 	}

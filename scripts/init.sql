@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS verification_codes (
 -- Custom domains table
 CREATE TABLE IF NOT EXISTS custom_domains (
     id SERIAL PRIMARY KEY,
+    cdid VARCHAR(64) UNIQUE NOT NULL,
     user_uid VARCHAR(64) NOT NULL,
     domain VARCHAR(255) UNIQUE NOT NULL,
     target VARCHAR(255) NOT NULL,

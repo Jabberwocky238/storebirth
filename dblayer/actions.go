@@ -100,24 +100,23 @@ func ListUserUIDsPaged(limit, offset int) ([]string, error) {
 // ========== CustomDomain Actions ==========
 
 // CreateCustomDomain 创建自定义域名
-func CreateCustomDomain(userUID, domain, target, txtName, txtValue, status string) (int, error) {
-	var id int
-	err := DB.QueryRow(
-		`INSERT INTO custom_domains (user_uid, domain, target, txt_name, txt_value, status)
-		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-		userUID, domain, target, txtName, txtValue, status,
-	).Scan(&id)
-	return id, err
+func CreateCustomDomain(cdid, userUID, domain, target, txtName, txtValue, status string) error {
+	_, err := DB.Exec(
+		`INSERT INTO custom_domains (cdid, user_uid, domain, target, txt_name, txt_value, status)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		cdid, userUID, domain, target, txtName, txtValue, status,
+	)
+	return err
 }
 
 // GetCustomDomain 获取自定义域名
-func GetCustomDomain(id int) (*CustomDomain, error) {
+func GetCustomDomain(cdid string) (*CustomDomain, error) {
 	var cd CustomDomain
 	err := DB.QueryRow(
-		`SELECT id, user_uid, domain, target, txt_name, txt_value, status, created_at
-		 FROM custom_domains WHERE id = $1`,
-		id,
-	).Scan(&cd.ID, &cd.UserUID, &cd.Domain, &cd.Target, &cd.TXTName, &cd.TXTValue, &cd.Status, &cd.CreatedAt)
+		`SELECT id, cdid, user_uid, domain, target, txt_name, txt_value, status, created_at
+		 FROM custom_domains WHERE cdid = $1`,
+		cdid,
+	).Scan(&cd.ID, &cd.CDID, &cd.UserUID, &cd.Domain, &cd.Target, &cd.TXTName, &cd.TXTValue, &cd.Status, &cd.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +126,7 @@ func GetCustomDomain(id int) (*CustomDomain, error) {
 // ListCustomDomains 获取用户的所有自定义域名
 func ListCustomDomains(userUID string) ([]*CustomDomain, error) {
 	rows, err := DB.Query(
-		`SELECT id, user_uid, domain, target, txt_name, txt_value, status, created_at
+		`SELECT id, cdid, user_uid, domain, target, txt_name, txt_value, status, created_at
 		 FROM custom_domains WHERE user_uid = $1`,
 		userUID,
 	)
@@ -139,7 +138,7 @@ func ListCustomDomains(userUID string) ([]*CustomDomain, error) {
 	var domains []*CustomDomain
 	for rows.Next() {
 		var cd CustomDomain
-		if err := rows.Scan(&cd.ID, &cd.UserUID, &cd.Domain, &cd.Target, &cd.TXTName, &cd.TXTValue, &cd.Status, &cd.CreatedAt); err != nil {
+		if err := rows.Scan(&cd.ID, &cd.CDID, &cd.UserUID, &cd.Domain, &cd.Target, &cd.TXTName, &cd.TXTValue, &cd.Status, &cd.CreatedAt); err != nil {
 			return nil, err
 		}
 		domains = append(domains, &cd)
@@ -148,24 +147,24 @@ func ListCustomDomains(userUID string) ([]*CustomDomain, error) {
 }
 
 // UpdateCustomDomainStatus 更新自定义域名状态
-func UpdateCustomDomainStatus(id int, status string) error {
+func UpdateCustomDomainStatus(cdid, status string) error {
 	_, err := DB.Exec(
-		`UPDATE custom_domains SET status = $1 WHERE id = $2`,
-		status, id,
+		`UPDATE custom_domains SET status = $1 WHERE cdid = $2`,
+		status, cdid,
 	)
 	return err
 }
 
 // DeleteCustomDomain 删除自定义域名
-func DeleteCustomDomain(id int) error {
-	_, err := DB.Exec(`DELETE FROM custom_domains WHERE id = $1`, id)
+func DeleteCustomDomain(cdid string) error {
+	_, err := DB.Exec(`DELETE FROM custom_domains WHERE cdid = $1`, cdid)
 	return err
 }
 
 // ListAllSuccessDomains 获取所有成功状态的域名（用于定期检查）
 func ListAllSuccessDomains() ([]*CustomDomain, error) {
 	rows, err := DB.Query(
-		`SELECT id, user_uid, domain, target, txt_name, txt_value, status, created_at
+		`SELECT id, cdid, user_uid, domain, target, txt_name, txt_value, status, created_at
 		 FROM custom_domains WHERE status = 'success'`,
 	)
 	if err != nil {
@@ -176,7 +175,7 @@ func ListAllSuccessDomains() ([]*CustomDomain, error) {
 	var domains []*CustomDomain
 	for rows.Next() {
 		var cd CustomDomain
-		if err := rows.Scan(&cd.ID, &cd.UserUID, &cd.Domain, &cd.Target, &cd.TXTName, &cd.TXTValue, &cd.Status, &cd.CreatedAt); err != nil {
+		if err := rows.Scan(&cd.ID, &cd.CDID, &cd.UserUID, &cd.Domain, &cd.Target, &cd.TXTName, &cd.TXTValue, &cd.Status, &cd.CreatedAt); err != nil {
 			return nil, err
 		}
 		domains = append(domains, &cd)

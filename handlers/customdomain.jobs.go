@@ -21,7 +21,7 @@ func (j *DomainCheckJob) Do() error {
 	for _, cd := range domains {
 		records, err := net.LookupTXT(cd.TXTName)
 		if err != nil {
-			dblayer.UpdateCustomDomainStatus(cd.ID, "error")
+			dblayer.UpdateCustomDomainStatus(cd.CDID, "error")
 			log.Printf("[domain-check] DNS lookup failed for %s: %v", cd.TXTName, err)
 			continue
 		}
@@ -33,7 +33,7 @@ func (j *DomainCheckJob) Do() error {
 			}
 		}
 		if !found {
-			dblayer.UpdateCustomDomainStatus(cd.ID, "error")
+			dblayer.UpdateCustomDomainStatus(cd.CDID, "error")
 			log.Printf("[domain-check] TXT record missing for %s", cd.Domain)
 		}
 	}
