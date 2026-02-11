@@ -8,13 +8,10 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"jabberwocky238/console/dblayer"
 	"jabberwocky238/console/handlers"
-	"jabberwocky238/console/handlers/jobs"
 	"jabberwocky238/console/k8s"
-	"jabberwocky238/console/k8s/controller"
 
 	"github.com/gin-gonic/gin"
 	"github.com/resend/resend-go/v3"
@@ -23,59 +20,36 @@ import (
 func main() {
 	listen := flag.String("l", "0.0.0.0:9900", "External listen address")
 	dbDSN := flag.String("d", "postgresql://myuser:your_password@localhost:5432/mydb?sslmode=disable", "Database DSN")
-	kubeconfig := flag.String("k", "", "Kubeconfig path (empty for in-cluster)")
-	flag.Parse()
 
-	if os.Getenv("ENV") != "test" {
-		checkEnv()
+	flag.Parse()
+	debug := os.Getenv("ENV") == "test"
+	if !debug {
+		checkEnvOuter()
 	}
 
 	// 1. Database
 	if err := dblayer.InitDB(*dbDSN); err != nil {
-		log.Fatal("Failed to connect to database:", err)
+		log.Fatalf("Failed to connect to database: %v", err)
+		panic("Failed to connect to database:" + err.Error())
 	}
 	defer dblayer.DB.Close()
 
 	// 2. CockroachDB
 	if err := k8s.InitRDBManager(); err != nil {
+		log.Fatalf("CockroachDB init failed: %v", err)
 		panic("CockroachDB init failed: " + err.Error())
 	}
 	defer k8s.RDBManager.Close()
 
-	// 3. K8s + Controller
-	if err := k8s.InitK8s(*kubeconfig); err != nil {
-		log.Printf("Warning: K8s client init failed: %v", err)
-	} else {
-		log.Println("K8s client initialized")
-		controller.EnsureCRD(k8s.RestConfig)
-		stopCh := make(chan struct{})
-		defer close(stopCh)
-		ctrl := controller.NewController(k8s.DynamicClient, k8s.K8sClient)
-		go ctrl.Start(stopCh)
-	}
-
-	// 4. Processor
-	proc := k8s.NewProcessor(256, 4)
-	proc.Start()
-	defer proc.Close()
-
 	wh := handlers.NewWorkerHandler()
 	ch := handlers.NewCombinatorHandler()
-
-	// 5. Cron
-	cron := k8s.NewCronScheduler(proc)
-	cron.RegisterJob(24*time.Hour, jobs.NewUserAuditJob())
-	cron.RegisterJob(12*time.Hour, jobs.NewDomainCheckJob())
-	proc.Submit(jobs.NewUserAuditJob())
-	cron.Start()
-	defer cron.Close()
 
 	log.Println("Outer gateway starting...")
 
 	// Setup External Gin router (public access)
 	router := gin.Default()
 	router.GET("/health", handlers.HealthOuter)
-	if os.Getenv("ENV") == "test" {
+	if debug {
 		router.Use(crossOriginMiddleware())
 	}
 
@@ -145,21 +119,30 @@ func main() {
 	srv.Shutdown(context.Background())
 }
 
-func checkEnv() {
-	domain := os.Getenv("DOMAIN")
-	if domain == "" {
-		panic("DOMAIN environment variable is required")
+func checkEnvOuter() {
+	var shouldPanic bool = false
+	requiredEnvs := []string{"DOMAIN", "RESEND_API_KEY"}
+	for _, env := range requiredEnvs {
+		thisVar := os.Getenv(env)
+		if thisVar == "" {
+			log.Printf("Environment variable %s is required but not set", env)
+			shouldPanic = true
+			continue
+		} else {
+			log.Printf("Environment variable %s is set", env)
+			switch env {
+			case "DOMAIN":
+				k8s.Domain = thisVar
+			case "RESEND_API_KEY":
+				handlers.RESEND_API_KEY = thisVar
+				handlers.ResendClient = resend.NewClient(handlers.RESEND_API_KEY)
+			}
+		}
 	}
-	log.Printf("Using domain: %s", domain)
-	k8s.Domain = domain
-
-	resend_api_key := os.Getenv("RESEND_API_KEY")
-	if resend_api_key == "" {
-		panic("RESEND_API_KEY environment variable is required")
+	if shouldPanic {
+		log.Fatalf("ENV not set, panic")
+		panic("One or more required environment variables are not set")
 	}
-	log.Print("RESEND_API_KEY is set")
-	handlers.RESEND_API_KEY = resend_api_key
-	handlers.ResendClient = resend.NewClient(resend_api_key)
 }
 
 func crossOriginMiddleware() gin.HandlerFunc {

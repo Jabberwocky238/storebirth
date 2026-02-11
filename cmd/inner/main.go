@@ -8,10 +8,13 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"jabberwocky238/console/dblayer"
 	"jabberwocky238/console/handlers"
+	"jabberwocky238/console/handlers/jobs"
 	"jabberwocky238/console/k8s"
+	"jabberwocky238/console/k8s/controller"
 
 	"github.com/gin-gonic/gin"
 )
@@ -19,27 +22,51 @@ import (
 func main() {
 	listen := flag.String("l", "0.0.0.0:9901", "Internal listen address")
 	dbDSN := flag.String("d", "postgresql://myuser:your_password@localhost:5432/mydb?sslmode=disable", "Database DSN")
+	kubeconfig := flag.String("k", "", "Kubeconfig path (empty for in-cluster)")
 	flag.Parse()
+	debug := os.Getenv("ENV") == "test"
+	if !debug {
+		checkEnvInner()
+	}
 
 	// 1. Database
 	if err := dblayer.InitDB(*dbDSN); err != nil {
-		log.Fatal("Failed to connect to database:", err)
+		log.Fatalf("Failed to connect to database: %v", err)
+		panic("Failed to connect to database:" + err.Error())
 	}
 	defer dblayer.DB.Close()
 
 	// 2. CockroachDB
 	if err := k8s.InitRDBManager(); err != nil {
+		log.Fatalf("CockroachDB init failed: %v", err)
 		panic("CockroachDB init failed: " + err.Error())
 	}
 	defer k8s.RDBManager.Close()
 
-	// 3. Processor
+	// 3. K8s + Controller
+	if err := k8s.InitK8s(*kubeconfig); err != nil {
+		log.Printf("Warning: K8s client init failed: %v", err)
+		panic("K8s client init failed: " + err.Error())
+	} else {
+		log.Println("K8s client initialized")
+		controller.EnsureCRD(k8s.RestConfig)
+		stopCh := make(chan struct{})
+		defer close(stopCh)
+		ctrl := controller.NewController(k8s.DynamicClient, k8s.K8sClient)
+		go ctrl.Start(stopCh)
+	}
+
+	// 4. Processor and Cron
 	proc := k8s.NewProcessor(256, 4)
 	cron := k8s.NewCronScheduler(proc)
 	proc.Start()
 	cron.Start()
 	defer proc.Close()
 	defer cron.Close()
+
+	cron.RegisterJob(24*time.Hour, jobs.NewUserAuditJob())
+	cron.RegisterJob(12*time.Hour, jobs.NewDomainCheckJob())
+	proc.Submit(jobs.NewUserAuditJob())
 
 	wh := handlers.NewWorkerHandler()
 	cih := handlers.NewCombinatorInternalHandler(proc)
@@ -76,4 +103,27 @@ func main() {
 	<-quit
 
 	srv.Shutdown(context.Background())
+}
+
+func checkEnvInner() {
+	var shouldPanic bool = false
+	requiredEnvs := []string{"DOMAIN"}
+	for _, env := range requiredEnvs {
+		thisVar := os.Getenv(env)
+		if thisVar == "" {
+			log.Printf("Environment variable %s is required but not set", env)
+			shouldPanic = true
+			continue
+		} else {
+			log.Printf("Environment variable %s is set", env)
+			switch env {
+			case "DOMAIN":
+				k8s.Domain = thisVar
+			}
+		}
+	}
+	if shouldPanic {
+		log.Fatalf("ENV not set, panic")
+		panic("One or more required environment variables are not set")
+	}
 }

@@ -43,8 +43,8 @@ envsubst < ingress.yaml | kubectl delete -f -
 envsubst < control-plane-deployment.yaml | kubectl apply -f -
 envsubst < control-plane-deployment.yaml | kubectl delete -f -
 
-
-kubectl rollout restart deployment/control-plane -n console
+kubectl rollout restart deployment/control-plane-inner -n console
+kubectl rollout restart deployment/control-plane-outer -n console
 kubectl rollout restart deployment.apps/combinator-jabber147008 -n combinator
 # 连接方式：
 kubectl exec -it cockroachdb-0 -n cockroachdb -- /cockroach/cockroach sql --insecure
