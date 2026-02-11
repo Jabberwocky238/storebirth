@@ -185,7 +185,7 @@ func (m *RootRDBManager) tryGetRootDB() (*sql.DB, error) {
 		m.rootDB = nil
 	}
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		db, err := sql.Open("postgres", m.rootDSN)
 		if err != nil {
 			return nil, fmt.Errorf("sql.Open failed: %w", err)

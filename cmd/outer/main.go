@@ -35,14 +35,6 @@ func main() {
 	}
 	defer dblayer.DB.Close()
 
-	// 2. CockroachDB
-	log.Printf("try to connect to cockroachdb")
-	if err := k8s.InitRDBManager(); err != nil {
-		log.Fatalf("CockroachDB init failed: %v", err)
-		panic("CockroachDB init failed: " + err.Error())
-	}
-	defer k8s.RDBManager.Close()
-
 	wh := handlers.NewWorkerHandler()
 	ch := handlers.NewCombinatorHandler()
 
