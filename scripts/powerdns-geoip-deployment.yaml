@@ -220,7 +220,7 @@ spec:
         - name: config
           mountPath: /etc/powerdns/pdns.conf
           subPath: pdns.conf
-        - name: config
+        - name: geoip-backend-script
           mountPath: /usr/local/bin/geoip-backend.sh
           subPath: geoip-backend.sh
         - name: geoip-data
@@ -229,14 +229,21 @@ spec:
         - sh
         - -c
         - |
-          # 安装必要的工具
-          apk add --no-cache bash libmaxminddb libmaxminddb-libs libmaxminddb-dev
+          set -e
 
-          # 确保脚本可执行
-          chmod +x /usr/local/bin/geoip-backend.sh
+          # 安装必要的工具 (Debian 系统使用 apt)
+          echo "Installing dependencies..."
+          apt-get update -qq
+          apt-get install -y -qq libmaxminddb0 libmaxminddb-dev mmdb-bin
 
-          # 启动 PowerDNS
-          exec /usr/local/sbin/pdns_server --config-dir=/etc/powerdns
+          # 测试 GeoIP 数据库
+          if [ ! -f /geoip/GeoLite2-Country.mmdb ]; then
+            echo "ERROR: GeoIP database not found"
+            exit 1
+          fi
+
+          echo "Starting PowerDNS..."
+          exec /usr/local/sbin/pdns_server --config-dir=/etc/powerdns --daemon=no
         livenessProbe:
           tcpSocket:
             port: 53
@@ -259,7 +266,16 @@ spec:
       - name: config
         configMap:
           name: powerdns-config
-          defaultMode: 0755
+          items:
+          - key: pdns.conf
+            path: pdns.conf
+      - name: geoip-backend-script
+        configMap:
+          name: powerdns-config
+          items:
+          - key: geoip-backend.sh
+            path: geoip-backend.sh
+            mode: 0755
       - name: geoip-data
         persistentVolumeClaim:
           claimName: geoip-data
