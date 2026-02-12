@@ -46,15 +46,6 @@ func (j *userAuditJob) Do() error {
 
 	ctx := context.Background()
 
-	// 2. 拉取所有 CR 列表（失败则中止，避免误判空列表导致跳过清理）
-	combinatorCRs, err := k8s.DynamicClient.Resource(controller.CombinatorAppGVR).
-		Namespace(k8s.CombinatorNamespace).
-		List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return fmt.Errorf("list combinator CRs: %w", err)
-	}
-	log.Printf("[audit] found %d combinator CRs", len(combinatorCRs.Items))
-
 	workerCRs, err := k8s.DynamicClient.Resource(controller.WorkerAppGVR).
 		Namespace(k8s.WorkerNamespace).
 		List(ctx, metav1.ListOptions{})

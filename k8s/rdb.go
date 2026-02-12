@@ -2,11 +2,13 @@ package k8s
 
 import (
 	"container/list"
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	_ "github.com/lib/pq"
 )
@@ -68,7 +70,10 @@ func (mgr *userDBManager) getOrCreateUserDB(userUID string) (*sql.DB, *userRDB, 
 		// Check connection health outside manager lock
 		db := entry.getDB()
 		if db != nil {
-			if db.Ping() == nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			err := db.PingContext(ctx)
+			cancel()
+			if err == nil {
 				// Connection is healthy, update LRU with write lock
 				mgr.mu.Lock()
 				mgr.lruList.MoveToFront(entry.element)
@@ -88,9 +93,14 @@ func (mgr *userDBManager) getOrCreateUserDB(userUID string) (*sql.DB, *userRDB, 
 	// Double check after acquiring write lock
 	if entry, exists := mgr.userDBs[userUID]; exists {
 		db := entry.getDB()
-		if db != nil && db.Ping() == nil {
-			mgr.lruList.MoveToFront(entry.element)
-			return db, userRDB, nil
+		if db != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			err := db.PingContext(ctx)
+			cancel()
+			if err == nil {
+				mgr.lruList.MoveToFront(entry.element)
+				return db, userRDB, nil
+			}
 		}
 		// Clean up dead connection
 		entry.close()
@@ -118,11 +128,20 @@ func (mgr *userDBManager) getOrCreateUserDB(userUID string) (*sql.DB, *userRDB, 
 		if err != nil {
 			return nil, nil, fmt.Errorf("sql.Open failed: %w", err)
 		}
-		if err := db.Ping(); err != nil {
+
+		// Configure connection pool
+		db.SetMaxOpenConns(10)
+		db.SetMaxIdleConns(2)
+		db.SetConnMaxLifetime(5 * time.Minute)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := db.PingContext(ctx); err != nil {
+			cancel()
 			log.Printf("[rdb] user %s ping attempt %d/3 failed: %v", userUID, i+1, err)
 			db.Close()
 			continue
 		}
+		cancel()
 		log.Printf("[rdb] user %s connected on attempt %d/3", userUID, i+1)
 
 		// Add to LRU cache
@@ -163,7 +182,10 @@ func (m *RootRDBManager) tryGetRootDB() (*sql.DB, error) {
 	// Fast path: try read lock first
 	m.rootmu.RLock()
 	if m.rootDB != nil {
-		if err := m.rootDB.Ping(); err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		err := m.rootDB.PingContext(ctx)
+		cancel()
+		if err == nil {
 			db := m.rootDB
 			m.rootmu.RUnlock()
 			return db, nil
@@ -177,7 +199,10 @@ func (m *RootRDBManager) tryGetRootDB() (*sql.DB, error) {
 
 	// Double check after acquiring write lock
 	if m.rootDB != nil {
-		if err := m.rootDB.Ping(); err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		err := m.rootDB.PingContext(ctx)
+		cancel()
+		if err == nil {
 			return m.rootDB, nil
 		}
 		log.Println("[rdb] root connection lost, reconnecting...")
@@ -185,16 +210,25 @@ func (m *RootRDBManager) tryGetRootDB() (*sql.DB, error) {
 		m.rootDB = nil
 	}
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		db, err := sql.Open("postgres", m.rootDSN)
 		if err != nil {
 			return nil, fmt.Errorf("sql.Open failed: %w", err)
 		}
-		if err := db.Ping(); err != nil {
+
+		// Configure connection pool for root connection
+		db.SetMaxOpenConns(20)
+		db.SetMaxIdleConns(5)
+		db.SetConnMaxLifetime(10 * time.Minute)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := db.PingContext(ctx); err != nil {
+			cancel()
 			log.Printf("[rdb] root ping attempt %d/3 failed: %v", i+1, err)
 			db.Close()
 			continue
 		}
+		cancel()
 		log.Printf("[rdb] root reconnected on attempt %d/3", i+1)
 		m.rootDB = db
 		return db, nil
@@ -245,8 +279,8 @@ func (r *userRDB) database() string {
 }
 
 func (r *userRDB) dsn() string {
-	return fmt.Sprintf("postgresql://%s@%s/%s?sslmode=disable",
-		r.username(), CockroachDBHost, r.database())
+	return fmt.Sprintf("postgresql://%s@%s:%s/%s?sslmode=disable",
+		r.username(), CockroachDBHost, CockroachDBPort, r.database())
 }
 
 func (r *userRDB) dsnWithSchema(schemaID string) string {

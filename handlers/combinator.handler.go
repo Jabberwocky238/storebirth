@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type CombinatorHandler struct {}
+type CombinatorHandler struct{}
 
 func NewCombinatorHandler() *CombinatorHandler {
 	return &CombinatorHandler{}

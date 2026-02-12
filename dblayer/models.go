@@ -37,7 +37,7 @@ type CustomDomain struct {
 // Worker model
 type Worker struct {
 	ID              int       `json:"id"`
-	WID             string    `json:"wid"`
+	WID             string    `json:"worker_id"`
 	UserUID         string    `json:"user_uid"`
 	WorkerName      string    `json:"worker_name"`
 	Status          string    `json:"status"` // unloaded, loading, active, error

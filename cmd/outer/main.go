@@ -35,22 +35,19 @@ func main() {
 	}
 	defer dblayer.DB.Close()
 
-	// 2. CockroachDB
-	log.Printf("try to connect to cockroachdb")
-	if err := k8s.InitRDBManager(); err != nil {
-		log.Fatalf("CockroachDB init failed: %v", err)
-		panic("CockroachDB init failed: " + err.Error())
-	}
-	defer k8s.RDBManager.Close()
-
 	wh := handlers.NewWorkerHandler()
 	ch := handlers.NewCombinatorHandler()
 
 	log.Println("Outer gateway starting...")
 
 	// Setup External Gin router (public access)
-	router := gin.Default()
+	router := gin.New()
+	router.Use(gin.Recovery())
 	router.GET("/health", handlers.HealthOuter)
+	// 过滤 /health 请求的日志
+	router.Use(gin.LoggerWithConfig(gin.LoggerConfig{
+		SkipPaths: []string{"/health"},
+	}))
 	if debug {
 		router.Use(crossOriginMiddleware())
 	}

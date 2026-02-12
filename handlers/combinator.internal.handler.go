@@ -3,6 +3,7 @@ package handlers
 import (
 	"jabberwocky238/console/dblayer"
 	"jabberwocky238/console/k8s"
+	"log"
 
 	"github.com/gin-gonic/gin"
 )
@@ -18,11 +19,12 @@ func NewCombinatorInternalHandler(proc *k8s.Processor) *CombinatorInternalHandle
 
 // RetrieveSecretByID retrieves all active combinator resources and their secrets for a user
 func (h *CombinatorInternalHandler) RetrieveSecretByID(c *gin.Context) {
-	userUID := c.GetString("user_id")
+	userUID := c.Query("user_id")
 
 	// Get user secret key
 	secretKey, err := dblayer.GetUserSecretKey(userUID)
 	if err != nil {
+		log.Printf("failed to get secret key for user %s: %v", userUID, err)
 		c.JSON(500, gin.H{"error": "failed to get user secret: " + err.Error()})
 		return
 	}
@@ -30,6 +32,7 @@ func (h *CombinatorInternalHandler) RetrieveSecretByID(c *gin.Context) {
 	// Get all active resources
 	resources, err := dblayer.ListActiveCombinatorResources(userUID)
 	if err != nil {
+		log.Printf("failed to list combinator resources for user %s: %v", userUID, err)
 		c.JSON(500, gin.H{"error": "failed to list resources: " + err.Error()})
 		return
 	}

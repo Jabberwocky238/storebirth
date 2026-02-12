@@ -30,25 +30,31 @@ func main() {
 	}
 
 	// 1. Database
+	log.Printf("try to connect to database: " + *dbDSN)
 	if err := dblayer.InitDB(*dbDSN); err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 		panic("Failed to connect to database:" + err.Error())
 	}
 	defer dblayer.DB.Close()
+	log.Printf("Database connected successfully")
 
 	// 2. CockroachDB
+	log.Printf("try to InitRDBManager")
 	if err := k8s.InitRDBManager(); err != nil {
-		log.Fatalf("CockroachDB init failed: %v", err)
-		panic("CockroachDB init failed: " + err.Error())
+		log.Printf("Warning: CockroachDB init failed: %v", err)
+		log.Println("Inner gateway will continue without RDB support")
+	} else {
+		defer k8s.RDBManager.Close()
+		log.Println("CockroachDB initialized")
 	}
-	defer k8s.RDBManager.Close()
 
 	// 3. K8s + Controller
+	log.Printf("try to InitK8s")
 	if err := k8s.InitK8s(*kubeconfig); err != nil {
 		log.Printf("Warning: K8s client init failed: %v", err)
 		panic("K8s client init failed: " + err.Error())
 	} else {
-		log.Println("K8s client initialized")
+		log.Println("K8s client initialized, EnsureCRD and start controller")
 		controller.EnsureCRD(k8s.RestConfig)
 		stopCh := make(chan struct{})
 		defer close(stopCh)
@@ -75,9 +81,13 @@ func main() {
 	log.Println("Inner gateway starting...")
 
 	// Setup Internal Gin router (internal services access)
-	router := gin.Default()
+	router := gin.New()
+	router.Use(gin.Recovery())
 	router.GET("/health", handlers.HealthInner)
-
+	// 过滤 /health 请求的日志
+	router.Use(gin.LoggerWithConfig(gin.LoggerConfig{
+		SkipPaths: []string{"/health"},
+	}))
 	api := router.Group("/api")
 	{
 		// Internal routes (no auth required, only accessible from cluster)
