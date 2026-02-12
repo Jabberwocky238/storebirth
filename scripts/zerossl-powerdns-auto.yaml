@@ -28,7 +28,7 @@ metadata:
 spec:
   acme:
     server: https://acme.zerossl.com/v2/DV90
-    email: your-email@example.com  # 修改为你的邮箱
+    email: shadowsocks1984@gmail.com  # 修改为你的邮箱
 
     privateKeySecretRef:
       name: zerossl-account-key
@@ -55,7 +55,7 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: mesh-worker-wildcard
-  namespace: default
+  namespace: ingress
 spec:
   secretName: mesh-worker-wildcard-tls
   issuerRef:
@@ -67,47 +67,22 @@ spec:
   renewBefore: 720h  # 30天前自动续期
 
 ---
-# 使用证书的 Traefik IngressRoute - 支持泛域名匹配
+# 使用证书的 Traefik IngressRoute - 泛域名路由到 control-plane-outer
 apiVersion: traefik.containo.us/v1alpha1
 kind: IngressRoute
 metadata:
   name: mesh-worker-wildcard-https
-  namespace: default
+  namespace: ingress
 spec:
   entryPoints:
     - websecure  # HTTPS 入口
   routes:
-  - match: HostRegexp(`{subdomain:[a-z0-9-]+}.mesh-worker.com`)
+  - match: HostRegexp(`{subdomain:[a-z0-9-]+}.mesh-worker.com`) || Host(`mesh-worker.com`)
     kind: Rule
     services:
-    - name: worker-router-service  # 需要一个路由服务来处理不同子域名
-      port: 80
+    - name: control-plane-outer
+      namespace: console
+      port: 9900
   tls:
     secretName: mesh-worker-wildcard-tls  # 使用 ZeroSSL 泛域名证书
 
----
-# 如果需要为特定子域名指定不同的服务，可以添加多个 IngressRoute
-# 优先级高的规则会先匹配
-apiVersion: traefik.containo.us/v1alpha1
-kind: IngressRoute
-metadata:
-  name: mesh-worker-specific-routes
-  namespace: default
-spec:
-  entryPoints:
-    - websecure
-  routes:
-  - match: Host(`app.mesh-worker.com`)
-    kind: Rule
-    priority: 100  # 更高优先级
-    services:
-    - name: app-service
-      port: 80
-  - match: Host(`api.mesh-worker.com`)
-    kind: Rule
-    priority: 100
-    services:
-    - name: api-service
-      port: 80
-  tls:
-    secretName: mesh-worker-wildcard-tls

@@ -1,4 +1,33 @@
 ---
+# PowerDNS + GeoIP 分流部署配置
+#
+# 架构说明：
+# 1. PowerDNS 根据用户地理位置返回不同地区集群的入口 IP
+# 2. 用户访问 *.mesh-worker.com 时，DNS 解析到对应地区的 K3s 集群入口
+# 3. Traefik IngressRoute 根据 Host 头将流量路由到 console/control-plane-outer 服务
+#
+# 需要从官网获取的资源：
+# 1. MaxMind GeoLite2 数据库
+#    - 官网: https://www.maxmind.com/en/geolite2/signup
+#    - 或使用公共镜像源（第 195-197 行，已配置）
+#
+# 需要自定义配置的部分：
+# 1. 集群入口 IP 地址 (第 67-73 行)
+#    - HK_IP: 香港/中国/台湾/澳门地区集群入口 IP (当前: 101.32.181.225)
+#    - US_IP: 美国/加拿大地区集群入口 IP (当前: 170.106.143.75)
+#    - MY_IP: 马来西亚/东南亚地区集群入口 IP (当前: 170.106.143.75)
+#    - DEFAULT_IP: 其他地区默认集群入口 IP (当前: 163.245.215.17)
+#    注意: 这些 IP 是 K3s LoadBalancer Service 或节点 IP，不是 Pod IP
+#
+# 2. 域名配置 (第 100 行)
+#    - 当前配置: *.mesh-worker.com 和 mesh-worker.com
+#    - 修改为你的实际域名
+#
+# 3. PowerDNS API Key (第 58、237 行)
+#    - 默认: changeme-api-key
+#    - 建议修改为强密码
+#
+---
 # Namespace
 apiVersion: v1
 kind: Namespace
@@ -158,16 +187,8 @@ spec:
           set -e
           echo "Downloading GeoLite2-Country database..."
 
-          # 使用免费的 GeoLite2 数据库
-          # 注意: 需要在 MaxMind 注册账号获取 LICENSE_KEY
-          # 或者使用已下载的数据库文件
-
           if [ ! -f /geoip/GeoLite2-Country.mmdb ]; then
-            # 方式1: 从 MaxMind 下载 (需要 LICENSE_KEY)
-            # LICENSE_KEY="${MAXMIND_LICENSE_KEY:-YOUR_LICENSE_KEY}"
-            # curl -L "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-Country&license_key=${LICENSE_KEY}&suffix=tar.gz" -o /tmp/geoip.tar.gz
-
-            # 方式2: 从公共镜像下载 (示例)
+            # 从公共镜像下载 GeoLite2 数据库
             curl -L "https://git.io/GeoLite2-Country.mmdb" -o /geoip/GeoLite2-Country.mmdb || \
             curl -L "https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-Country.mmdb" -o /geoip/GeoLite2-Country.mmdb
 
@@ -175,19 +196,9 @@ spec:
           else
             echo "GeoIP database already exists"
           fi
-
-          # 安装 mmdblookup 工具
-          apk add --no-cache libmaxminddb libmaxminddb-dev || true
         volumeMounts:
         - name: geoip-data
           mountPath: /geoip
-        env:
-        - name: MAXMIND_LICENSE_KEY
-          valueFrom:
-            secretKeyRef:
-              name: maxmind-license
-              key: license-key
-              optional: true
 
       containers:
       - name: powerdns
@@ -294,36 +305,3 @@ spec:
     name: api
   selector:
     app: powerdns
-
----
-# Optional: Secret for MaxMind License Key
-apiVersion: v1
-kind: Secret
-metadata:
-  name: maxmind-license
-  namespace: powerdns-system
-type: Opaque
-stringData:
-  license-key: "YOUR_MAXMIND_LICENSE_KEY_HERE"
-
----
-# Optional: Ingress for API (if needed)
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: powerdns-api
-  namespace: powerdns-system
-  annotations:
-    kubernetes.io/ingress.class: traefik
-spec:
-  rules:
-  - host: powerdns-api.example.com
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: powerdns-api
-            port:
-              number: 8081
