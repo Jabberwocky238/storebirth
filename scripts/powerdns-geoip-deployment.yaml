@@ -236,13 +236,28 @@ spec:
           # 安装必要的工具 (Debian 系统使用 apt)
           echo "Installing dependencies..."
           apt-get update -qq
-          apt-get install -y -qq libmaxminddb0 libmaxminddb-dev mmdb-bin
+          apt-get install -y -qq libmaxminddb0 libmaxminddb-dev mmdb-bin bash
 
           # 测试 GeoIP 数据库
           if [ ! -f /geoip/GeoLite2-Country.mmdb ]; then
             echo "ERROR: GeoIP database not found"
             exit 1
           fi
+
+          # 测试脚本是否可执行
+          echo "Testing backend script..."
+          if [ ! -x /usr/local/bin/geoip-backend.sh ]; then
+            echo "ERROR: Script not executable"
+            ls -la /usr/local/bin/geoip-backend.sh
+            exit 1
+          fi
+
+          # 测试脚本握手
+          echo "Testing script handshake..."
+          echo "HELO	1" | timeout 5 /usr/local/bin/geoip-backend.sh || {
+            echo "ERROR: Script handshake failed"
+            exit 1
+          }
 
           echo "Starting PowerDNS..."
           exec /usr/local/sbin/pdns_server --config-dir=/etc/powerdns --daemon=no
